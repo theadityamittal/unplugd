@@ -1,19 +1,57 @@
-venv
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
 
-# model checkpoints
-models/checkpoints
+# Virtual environments
+.venv/
+venv/
 
-# Hydra run directories
+# uv
+uv.lock
+
+# SAM
+.aws-sam/
+samconfig.toml.bak
+packaged.yaml
+
+# AWS
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Logs
+*.log
+
+# Reference old code artifacts (DVC-tracked, not needed)
+_reference/data/
+_reference/models/*.pt
+_reference/results/
+
+# DVC (legacy)
 /outputs/
 /hydra.*
-
-# MLflow runs
 /mlruns/
-
-# Logs and temporary files
-*.log
 *.npz
-__pycache__/
-*.py[cod]data/processed/*.h5
-models/unet_best.pt
-results/eval.csv

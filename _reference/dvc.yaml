@@ -1,0 +1,32 @@
+# DVC pipeline configuration file
+stages:
+  preprocess:
+    cmd: python -m src.data.preprocess
+    deps:
+    - src/data/loader.py
+    - src/data/preprocess.py
+    - src/data/preprocess_utils.py
+    - config/default.yaml
+    - data/raw/train.zip
+    - data/raw/test.zip
+    outs:
+    - data/processed/train.h5
+    - data/processed/test.h5
+
+  evaluate:
+    cmd: >-
+      python -m src.evaluate 
+      --checkpoint models/unet_best.pt 
+      --config config/default.yaml 
+      --output results/eval.csv 
+      --out-dir results/separated
+    deps:
+    - src/evaluate.py
+    - config/default.yaml
+    - models/unet_best.pt
+    - data/processed/test.h5
+    outs:
+    - results/separated
+    metrics:
+    - results/eval.csv
+

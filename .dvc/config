@@ -1,5 +1,0 @@
-[core]
-    remote = storage
-['remote "storage"']
-    url = s3://my-music-dvc-storage
-    profile = dvc

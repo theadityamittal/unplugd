@@ -1,0 +1,58 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Unplugd — Serverless karaoke backend.
+  Upload songs, separate stems with Demucs, extract synced lyrics with Whisper.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Deployment environment
+
+  AppName:
+    Type: String
+    Default: unplugd
+    Description: Application name used for resource naming
+
+Globals:
+  Function:
+    Runtime: python3.12
+    MemorySize: 256
+    Timeout: 30
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        ENVIRONMENT: !Ref Environment
+        APP_NAME: !Ref AppName
+        AWS_ACCOUNT_ID: !Ref AWS::AccountId
+
+Resources:
+  # Placeholder — resources added in Phases 1-9
+  # Phase 1: DynamoDB tables, S3 buckets, CloudFront, Cognito, SQS DLQ
+  # Phase 2: REST API, upload Lambda functions, CommonLayer
+  # Phase 3: WebSocket API, WS Lambda functions
+  # Phase 4: ECR repo, ECS Cluster, Demucs task definition
+  # Phase 5: Whisper ECR repo, task definition
+  # Phase 6: Step Functions state machine, VPC, Lambda functions
+  # Phase 7: Song library API routes
+  # Phase 9: CloudWatch dashboard, alarms
+
+  PlaceholderParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Value: !Sub "${AppName}-${Environment}-initialized"
+      Description: Placeholder parameter to validate the SAM template deploys correctly
+
+Outputs:
+  StackName:
+    Description: CloudFormation stack name
+    Value: !Ref AWS::StackName
+  Environment:
+    Description: Deployment environment
+    Value: !Ref Environment
