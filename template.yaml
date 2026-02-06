@@ -193,6 +193,8 @@ Resources:
       FunctionName: !Sub "${AppName}-${Environment}-ws-disconnect"
       Handler: ws_disconnect/handler.lambda_handler
       CodeUri: functions/
+      Layers:
+        - !Ref CommonLayer
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !GetAtt StorageStack.Outputs.ConnectionsTableName
@@ -203,6 +205,8 @@ Resources:
       FunctionName: !Sub "${AppName}-${Environment}-ws-default"
       Handler: ws_default/handler.lambda_handler
       CodeUri: functions/
+      Layers:
+        - !Ref CommonLayer
 
   SendProgressFunction:
     Type: AWS::Serverless::Function
@@ -210,6 +214,8 @@ Resources:
       FunctionName: !Sub "${AppName}-${Environment}-send-progress"
       Handler: send_progress/handler.lambda_handler
       CodeUri: functions/
+      Layers:
+        - !Ref CommonLayer
       Environment:
         Variables:
           WEBSOCKET_API_ENDPOINT: !GetAtt WebSocketStack.Outputs.WebSocketManagementEndpoint

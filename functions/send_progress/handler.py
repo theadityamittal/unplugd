@@ -11,7 +11,7 @@ from shared.websocket import send_to_connection
 logger = logging.getLogger(__name__)
 
 
-def lambda_handler(event: dict[str, Any], context: Any) -> None:
+def lambda_handler(event: dict[str, Any], _context: Any) -> None:
     """Invoked asynchronously by Fargate containers or Step Functions.
 
     Expected event payload:
@@ -29,8 +29,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> None:
     user_id = event.get("userId")
     message = event.get("message")
 
-    if not user_id or not message:
-        logger.error("Missing userId or message in event: %s", event)
+    if not user_id or not isinstance(message, dict) or not message:
+        logger.error("Missing userId or invalid message in event: %s", event)
         return
 
     logger.info(

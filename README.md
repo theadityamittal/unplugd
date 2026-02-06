@@ -27,7 +27,7 @@ Users toggle stems on/off: karaoke (vocals off), drum practice (drums off), bass
 
 ## Architecture
 
-```
+```text
 Client  -->  API Gateway  -->  UploadRequest Lambda (presigned URL)
                 |
         PUT to S3 Upload Bucket
@@ -43,7 +43,7 @@ Client  -->  API Gateway  -->  UploadRequest Lambda (presigned URL)
 
 ## Project Structure
 
-```
+```text
 unplugd/
 ├── template.yaml              # Root SAM template (orchestrates nested stacks)
 ├── templates/                 # Nested CloudFormation templates

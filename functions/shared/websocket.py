@@ -33,12 +33,18 @@ def ws_response(body: dict[str, Any]) -> dict[str, Any]:
     return {"statusCode": 200, "body": json.dumps(body)}
 
 
+_apigw_client: Any = None
+
+
 def _management_api_client() -> Any:
-    """Create API Gateway Management API client."""
-    return boto3.client(
-        "apigatewaymanagementapi",
-        endpoint_url=WEBSOCKET_API_ENDPOINT,
-    )
+    """Return a cached API Gateway Management API client."""
+    global _apigw_client
+    if _apigw_client is None:
+        _apigw_client = boto3.client(
+            "apigatewaymanagementapi",
+            endpoint_url=WEBSOCKET_API_ENDPOINT,
+        )
+    return _apigw_client
 
 
 def send_to_connection(connection_id: str, message: dict[str, Any]) -> bool:

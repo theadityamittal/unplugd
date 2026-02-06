@@ -11,7 +11,7 @@ from shared.websocket import ws_response
 logger = logging.getLogger(__name__)
 
 
-def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
+def lambda_handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     connection_id = event["requestContext"]["connectionId"]
     body_raw = event.get("body") or ""
 

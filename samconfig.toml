@@ -9,14 +9,14 @@ parallel = true
 
 [dev.deploy.parameters]
 stack_name = "unplugd-dev"
-capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND"
+capabilities = "CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND"
 resolve_s3 = true
 parameter_overrides = "Environment=dev"
 confirm_changeset = false
 
 [prod.deploy.parameters]
 stack_name = "unplugd-prod"
-capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND"
+capabilities = "CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND"
 resolve_s3 = true
 parameter_overrides = "Environment=prod"
 confirm_changeset = true
