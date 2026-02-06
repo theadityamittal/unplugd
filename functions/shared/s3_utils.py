@@ -8,7 +8,7 @@ from typing import Any
 import boto3
 from botocore.exceptions import ClientError
 from shared.constants import (
-    CLOUDFRONT_DOMAIN,
+    OUTPUT_BUCKET_NAME,
     PRESIGNED_URL_EXPIRATION,
     STEM_NAMES,
     UPLOAD_BUCKET_NAME,
@@ -55,12 +55,29 @@ def delete_objects_by_prefix(bucket: str, prefix: str) -> int:
 
 
 def get_stem_urls(user_id: str, song_id: str) -> dict[str, str]:
-    base = f"https://{CLOUDFRONT_DOMAIN}/output/{user_id}/{song_id}"
-    return {stem: f"{base}/{stem}.wav" for stem in STEM_NAMES}
+    return {
+        stem: _s3.generate_presigned_url(
+            ClientMethod="get_object",
+            Params={
+                "Bucket": OUTPUT_BUCKET_NAME,
+                "Key": f"output/{user_id}/{song_id}/{stem}.wav",
+            },
+            ExpiresIn=PRESIGNED_URL_EXPIRATION,
+        )
+        for stem in STEM_NAMES
+    }
 
 
 def get_lyrics_url(user_id: str, song_id: str) -> str:
-    return f"https://{CLOUDFRONT_DOMAIN}/output/{user_id}/{song_id}/lyrics.json"
+    url: str = _s3.generate_presigned_url(
+        ClientMethod="get_object",
+        Params={
+            "Bucket": OUTPUT_BUCKET_NAME,
+            "Key": f"output/{user_id}/{song_id}/lyrics.json",
+        },
+        ExpiresIn=PRESIGNED_URL_EXPIRATION,
+    )
+    return url
 
 
 def head_object(bucket: str, key: str) -> dict[str, Any] | None:
