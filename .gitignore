@@ -37,6 +37,12 @@ packaged.yaml
 .DS_Store
 Thumbs.db
 
+# Test audio files
+*.wav
+*.mp3
+*.m4a
+*.flac
+
 # Testing
 .pytest_cache/
 .mypy_cache/

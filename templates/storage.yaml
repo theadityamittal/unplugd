@@ -75,35 +75,7 @@ Resources:
           Value: !Ref AppName
 
   # ---- S3 ----
-
-  UploadBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub "${AppName}-${Environment}-uploads-${AWS::AccountId}"
-      LifecycleConfiguration:
-        Rules:
-          - Id: ExpireUploadsAfter24Hours
-            Status: Enabled
-            ExpirationInDays: 1
-      CorsConfiguration:
-        CorsRules:
-          - AllowedHeaders:
-              - "*"
-            AllowedMethods:
-              - PUT
-            AllowedOrigins:
-              - "*"
-            MaxAge: 3600
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
-      Tags:
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Application
-          Value: !Ref AppName
+  # NOTE: UploadBucket is defined in root template.yaml (required for SAM S3 event source)
 
   OutputBucket:
     Type: AWS::S3::Bucket
@@ -129,10 +101,6 @@ Outputs:
     Value: !Ref ConnectionsTable
   ConnectionsTableArn:
     Value: !GetAtt ConnectionsTable.Arn
-  UploadBucketName:
-    Value: !Ref UploadBucket
-  UploadBucketArn:
-    Value: !GetAtt UploadBucket.Arn
   OutputBucketName:
     Value: !Ref OutputBucket
   OutputBucketArn:

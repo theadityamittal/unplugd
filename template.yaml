@@ -31,12 +31,62 @@ Globals:
         APP_NAME: !Ref AppName
         SONGS_TABLE_NAME: !GetAtt StorageStack.Outputs.SongsTableName
         CONNECTIONS_TABLE_NAME: !GetAtt StorageStack.Outputs.ConnectionsTableName
-        UPLOAD_BUCKET_NAME: !GetAtt StorageStack.Outputs.UploadBucketName
+        UPLOAD_BUCKET_NAME: !Sub "${AppName}-${Environment}-uploads-${AWS::AccountId}"
         OUTPUT_BUCKET_NAME: !GetAtt StorageStack.Outputs.OutputBucketName
         COGNITO_USER_POOL_ID: !GetAtt AuthStack.Outputs.UserPoolId
         DLQ_URL: !GetAtt MonitoringStack.Outputs.DeadLetterQueueUrl
 
 Resources:
+  # ---- S3 Upload Bucket (root-level for SAM S3 event source) ----
+
+  UploadBucket:
+    Type: AWS::S3::Bucket
+    DependsOn: ProcessUploadInvokePermission
+    Properties:
+      BucketName: !Sub "${AppName}-${Environment}-uploads-${AWS::AccountId}"
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt ProcessUploadFunction.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: uploads/
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireUploadsAfter24Hours
+            Status: Enabled
+            ExpirationInDays: 1
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - "*"
+            AllowedMethods:
+              - PUT
+            AllowedOrigins:
+              - "*"
+            MaxAge: 3600
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: !Ref AppName
+
+  ProcessUploadInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt ProcessUploadFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub "arn:aws:s3:::${AppName}-${Environment}-uploads-${AWS::AccountId}"
+      SourceAccount: !Ref AWS::AccountId
+
   # ---- Nested Stacks ----
 
   StorageStack:
@@ -63,7 +113,66 @@ Resources:
         Environment: !Ref Environment
         AppName: !Ref AppName
 
-  # Phase 2: REST API, upload Lambda functions, CommonLayer
+  # ---- Lambda Layer ----
+
+  CommonLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: !Sub "${AppName}-${Environment}-common"
+      Description: Shared Python libraries (mutagen, python-ulid)
+      ContentUri: layers/common/
+      CompatibleRuntimes:
+        - python3.12
+      RetentionPolicy: Delete
+    Metadata:
+      BuildMethod: python3.12
+
+  # ---- Phase 2: Upload Lambda Functions ----
+
+  UploadRequestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-upload-request"
+      Handler: upload_request/handler.lambda_handler
+      CodeUri: functions/
+      Layers:
+        - !Ref CommonLayer
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Sub "${AppName}-${Environment}-uploads-${AWS::AccountId}"
+        - DynamoDBCrudPolicy:
+            TableName: !GetAtt StorageStack.Outputs.SongsTableName
+
+  ProcessUploadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-process-upload"
+      Handler: process_upload/handler.lambda_handler
+      CodeUri: functions/
+      Timeout: 60
+      Layers:
+        - !Ref CommonLayer
+      Environment:
+        Variables:
+          STATE_MACHINE_ARN: ""
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Sub "${AppName}-${Environment}-uploads-${AWS::AccountId}"
+        - DynamoDBCrudPolicy:
+            TableName: !GetAtt StorageStack.Outputs.SongsTableName
+
+  # ---- Phase 2: REST API ----
+
+  ApiStack:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: ./templates/api.yaml
+      Parameters:
+        Environment: !Ref Environment
+        AppName: !Ref AppName
+        CognitoUserPoolArn: !GetAtt AuthStack.Outputs.UserPoolArn
+        UploadRequestFunctionArn: !GetAtt UploadRequestFunction.Arn
+
   # Phase 3: WebSocket API, WS Lambda functions
   # Phase 4: ECR repo, ECS Cluster, Demucs task definition
   # Phase 5: Whisper ECR repo, task definition
@@ -89,9 +198,9 @@ Outputs:
   ConnectionsTableArn:
     Value: !GetAtt StorageStack.Outputs.ConnectionsTableArn
   UploadBucketName:
-    Value: !GetAtt StorageStack.Outputs.UploadBucketName
+    Value: !Sub "${AppName}-${Environment}-uploads-${AWS::AccountId}"
   UploadBucketArn:
-    Value: !GetAtt StorageStack.Outputs.UploadBucketArn
+    Value: !Sub "arn:aws:s3:::${AppName}-${Environment}-uploads-${AWS::AccountId}"
   OutputBucketName:
     Value: !GetAtt StorageStack.Outputs.OutputBucketName
   OutputBucketArn:
@@ -109,3 +218,7 @@ Outputs:
     Value: !GetAtt MonitoringStack.Outputs.DeadLetterQueueUrl
   DeadLetterQueueArn:
     Value: !GetAtt MonitoringStack.Outputs.DeadLetterQueueArn
+
+  # API
+  ApiEndpoint:
+    Value: !GetAtt ApiStack.Outputs.ApiEndpoint
