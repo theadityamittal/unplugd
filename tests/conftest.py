@@ -27,6 +27,7 @@ os.environ["SONGS_TABLE_NAME"] = "unplugd-test-songs"
 os.environ["CONNECTIONS_TABLE_NAME"] = "unplugd-test-connections"
 os.environ["UPLOAD_BUCKET_NAME"] = "unplugd-test-uploads-123456789012"
 os.environ["OUTPUT_BUCKET_NAME"] = "unplugd-test-output-123456789012"
+os.environ["STATE_MACHINE_ARN"] = ""
 
 
 @pytest.fixture()

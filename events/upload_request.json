@@ -1,0 +1,23 @@
+{
+  "httpMethod": "POST",
+  "path": "/songs/upload-url",
+  "resource": "/songs/upload-url",
+  "requestContext": {
+    "resourcePath": "/songs/upload-url",
+    "httpMethod": "POST",
+    "authorizer": {
+      "claims": {
+        "sub": "user-123-abc",
+        "email": "test@example.com",
+        "email_verified": "true",
+        "cognito:username": "test@example.com"
+      }
+    }
+  },
+  "headers": {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+  },
+  "body": "{\"filename\": \"my-song.mp3\", \"contentType\": \"audio/mpeg\"}",
+  "isBase64Encoded": false
+}

@@ -43,14 +43,16 @@ STATUS_FAILED: str = "FAILED"
 MAX_FILE_SIZE_BYTES: int = 50 * 1024 * 1024  # 50 MB
 MAX_DURATION_SECONDS: int = 600  # 10 minutes
 ALLOWED_FORMATS: frozenset[str] = frozenset({"mp3", "wav", "m4a", "flac"})
-ALLOWED_CONTENT_TYPES: frozenset[str] = frozenset({
-    "audio/mpeg",
-    "audio/wav",
-    "audio/x-wav",
-    "audio/mp4",
-    "audio/x-m4a",
-    "audio/flac",
-})
+ALLOWED_CONTENT_TYPES: frozenset[str] = frozenset(
+    {
+        "audio/mpeg",
+        "audio/wav",
+        "audio/x-wav",
+        "audio/mp4",
+        "audio/x-m4a",
+        "audio/flac",
+    }
+)
 
 # ---- Presigned URL ----
 PRESIGNED_URL_EXPIRATION: int = 900  # 15 minutes
