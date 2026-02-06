@@ -7,7 +7,7 @@ Serverless AWS karaoke backend — upload any song, get separated stems and sync
 1. **Upload** an audio file (MP3, WAV, M4A, FLAC — max 10 min / 50MB)
 2. **Separate** into 4 stems (drums, bass, other, vocals) using Meta's Demucs
 3. **Extract** word-level synced lyrics using OpenAI's Whisper
-4. **Serve** stems + lyrics via CloudFront for playback with real-time mixing
+4. **Serve** stems + lyrics via presigned S3 URLs for playback with real-time mixing
 
 Users toggle stems on/off: karaoke (vocals off), drum practice (drums off), bass practice (bass off), or isolate vocals.
 
@@ -20,7 +20,7 @@ Users toggle stems on/off: karaoke (vocals off), drum practice (drums off), bass
 | Orchestration | Step Functions |
 | Auth | Cognito |
 | Database | DynamoDB |
-| Storage | S3 + CloudFront CDN |
+| Storage | S3 (presigned URLs) |
 | ML | Demucs `htdemucs_ft` + Whisper `base` |
 | IaC | SAM / CloudFormation (nested stacks) |
 | Python | uv (3.12) |
@@ -38,7 +38,7 @@ Client  -->  API Gateway  -->  UploadRequest Lambda (presigned URL)
                                       |
                           Completion --> Cleanup --> Notify
                                       |
-                          CloudFront + S3 (stems + lyrics)
+                          S3 Output Bucket (stems + lyrics)
 ```
 
 ## Project Structure
@@ -47,7 +47,7 @@ Client  -->  API Gateway  -->  UploadRequest Lambda (presigned URL)
 unplugd/
 ├── template.yaml              # Root SAM template (orchestrates nested stacks)
 ├── templates/                 # Nested CloudFormation templates
-│   ├── storage.yaml           # DynamoDB, S3, CloudFront
+│   ├── storage.yaml           # DynamoDB, S3
 │   ├── auth.yaml              # Cognito
 │   └── monitoring.yaml        # SQS DLQ, CloudWatch alarms
 ├── functions/                 # Lambda handlers

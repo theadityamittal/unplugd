@@ -27,9 +27,6 @@ USER_INDEX: str = "UserIndex"
 UPLOAD_BUCKET_NAME: str = _env("UPLOAD_BUCKET_NAME")
 OUTPUT_BUCKET_NAME: str = _env("OUTPUT_BUCKET_NAME")
 
-# ---- CloudFront ----
-CLOUDFRONT_DOMAIN: str = _env("CLOUDFRONT_DOMAIN")
-
 # ---- Cognito ----
 COGNITO_USER_POOL_ID: str = _env("COGNITO_USER_POOL_ID")
 
