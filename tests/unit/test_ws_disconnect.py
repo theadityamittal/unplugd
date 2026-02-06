@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from moto import mock_aws
 from shared.dynamodb_utils import put_connection
 
 
@@ -18,7 +17,6 @@ def _make_ws_disconnect_event(connection_id: str = "conn-123") -> dict[str, Any]
     }
 
 
-@mock_aws
 def test_disconnect_happy_path(dynamodb_tables: dict[str, Any]) -> None:
     """Existing connection is deleted from DDB."""
     from functions.ws_disconnect.handler import lambda_handler
@@ -36,7 +34,6 @@ def test_disconnect_happy_path(dynamodb_tables: dict[str, Any]) -> None:
     assert "Item" not in result
 
 
-@mock_aws
 def test_disconnect_nonexistent_connection(dynamodb_tables: dict[str, Any]) -> None:
     """Disconnecting a nonexistent connection still returns 200 (idempotent)."""
     from functions.ws_disconnect.handler import lambda_handler

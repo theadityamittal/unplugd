@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from moto import mock_aws
 from shared.dynamodb_utils import (
     delete_connection,
     delete_song,
@@ -19,7 +18,6 @@ from shared.dynamodb_utils import (
 )
 
 
-@mock_aws
 def test_put_and_get_song(dynamodb_tables: dict[str, Any]) -> None:
     item = {"userId": "user1", "songId": "song1", "title": "Test Song", "status": "PENDING_UPLOAD"}
     put_song(item)
@@ -28,13 +26,11 @@ def test_put_and_get_song(dynamodb_tables: dict[str, Any]) -> None:
     assert result["title"] == "Test Song"
 
 
-@mock_aws
 def test_get_song_not_found(dynamodb_tables: dict[str, Any]) -> None:
     result = get_song("nonexistent", "nonexistent")
     assert result is None
 
 
-@mock_aws
 def test_update_song(dynamodb_tables: dict[str, Any]) -> None:
     put_song({"userId": "user1", "songId": "song1", "status": "PENDING_UPLOAD"})
     updated = update_song("user1", "song1", {"status": "PROCESSING"})
@@ -42,7 +38,6 @@ def test_update_song(dynamodb_tables: dict[str, Any]) -> None:
     assert "updatedAt" in updated
 
 
-@mock_aws
 def test_query_songs_by_user(dynamodb_tables: dict[str, Any]) -> None:
     put_song({"userId": "user1", "songId": "song1", "status": "COMPLETED"})
     put_song({"userId": "user1", "songId": "song2", "status": "PROCESSING"})
@@ -51,7 +46,6 @@ def test_query_songs_by_user(dynamodb_tables: dict[str, Any]) -> None:
     assert len(results) == 2
 
 
-@mock_aws
 def test_query_songs_by_status(dynamodb_tables: dict[str, Any]) -> None:
     put_song({"userId": "user1", "songId": "song1", "status": "COMPLETED"})
     put_song({"userId": "user1", "songId": "song2", "status": "PROCESSING"})
@@ -60,14 +54,12 @@ def test_query_songs_by_status(dynamodb_tables: dict[str, Any]) -> None:
     assert results[0]["songId"] == "song1"
 
 
-@mock_aws
 def test_delete_song(dynamodb_tables: dict[str, Any]) -> None:
     put_song({"userId": "user1", "songId": "song1", "status": "COMPLETED"})
     delete_song("user1", "song1")
     assert get_song("user1", "song1") is None
 
 
-@mock_aws
 def test_put_and_get_connection(dynamodb_tables: dict[str, Any]) -> None:
     put_connection({"connectionId": "conn1", "userId": "user1", "ttl": 9999999999})
     result = get_connection("conn1")
@@ -75,7 +67,6 @@ def test_put_and_get_connection(dynamodb_tables: dict[str, Any]) -> None:
     assert result["userId"] == "user1"
 
 
-@mock_aws
 def test_query_connections_by_user(dynamodb_tables: dict[str, Any]) -> None:
     put_connection({"connectionId": "conn1", "userId": "user1", "ttl": 9999999999})
     put_connection({"connectionId": "conn2", "userId": "user1", "ttl": 9999999999})
@@ -83,7 +74,6 @@ def test_query_connections_by_user(dynamodb_tables: dict[str, Any]) -> None:
     assert len(results) == 2
 
 
-@mock_aws
 def test_delete_connection(dynamodb_tables: dict[str, Any]) -> None:
     put_connection({"connectionId": "conn1", "userId": "user1", "ttl": 9999999999})
     delete_connection("conn1")

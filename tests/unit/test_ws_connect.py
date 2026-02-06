@@ -5,8 +5,6 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from moto import mock_aws
-
 from tests.conftest import CognitoJwtKeys
 
 
@@ -28,12 +26,11 @@ def _make_ws_connect_event(
     return event
 
 
-@mock_aws
 def test_connect_happy_path(
     dynamodb_tables: dict[str, Any],
     cognito_jwt_keys: CognitoJwtKeys,
 ) -> None:
-    """Valid token → 200, connection stored in DDB with correct userId."""
+    """Valid token -> 200, connection stored in DDB with correct userId."""
     from functions.ws_connect.handler import lambda_handler
 
     token = cognito_jwt_keys.sign_token({"sub": "user-abc"})
@@ -51,9 +48,8 @@ def test_connect_happy_path(
     assert "ttl" in item
 
 
-@mock_aws
 def test_connect_missing_token(dynamodb_tables: dict[str, Any]) -> None:
-    """No token in query params → 401, no connection stored."""
+    """No token in query params -> 401, no connection stored."""
     from functions.ws_connect.handler import lambda_handler
 
     event = _make_ws_connect_event(connection_id="conn-notoken")
@@ -67,12 +63,11 @@ def test_connect_missing_token(dynamodb_tables: dict[str, Any]) -> None:
     assert "Item" not in result
 
 
-@mock_aws
 def test_connect_invalid_token(
     dynamodb_tables: dict[str, Any],
     cognito_jwt_keys: CognitoJwtKeys,
 ) -> None:
-    """Invalid JWT → 401."""
+    """Invalid JWT -> 401."""
     from functions.ws_connect.handler import lambda_handler
 
     event = _make_ws_connect_event(connection_id="conn-bad", token="not.a.jwt")
@@ -82,7 +77,6 @@ def test_connect_invalid_token(
     assert response["statusCode"] == 401
 
 
-@mock_aws
 def test_connect_stores_ttl(
     dynamodb_tables: dict[str, Any],
     cognito_jwt_keys: CognitoJwtKeys,
@@ -102,7 +96,6 @@ def test_connect_stores_ttl(
     assert before + 7200 <= ttl <= after + 7200
 
 
-@mock_aws
 def test_connect_stores_connected_at(
     dynamodb_tables: dict[str, Any],
     cognito_jwt_keys: CognitoJwtKeys,
