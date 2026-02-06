@@ -33,6 +33,9 @@ COGNITO_USER_POOL_ID: str = _env("COGNITO_USER_POOL_ID")
 # ---- SQS ----
 DLQ_URL: str = _env("DLQ_URL")
 
+# ---- WebSocket ----
+WEBSOCKET_API_ENDPOINT: str = _env("WEBSOCKET_API_ENDPOINT")
+
 # ---- Song Status Values ----
 STATUS_PENDING_UPLOAD: str = "PENDING_UPLOAD"
 STATUS_PROCESSING: str = "PROCESSING"

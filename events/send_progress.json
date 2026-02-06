@@ -1,0 +1,10 @@
+{
+  "userId": "user-123-abc",
+  "message": {
+    "type": "PROGRESS",
+    "songId": "01HXK5ABCDEF1234567890",
+    "stage": "demucs",
+    "progress": 50,
+    "message": "Separating stems..."
+  }
+}
