@@ -23,6 +23,9 @@ packaged.yaml
 .env
 .env.*
 
+# Claude
+.claude/
+
 # IDE
 .vscode/
 .idea/
