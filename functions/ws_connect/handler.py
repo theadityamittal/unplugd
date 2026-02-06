@@ -33,7 +33,10 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         logger.warning("Invalid token for connectionId=%s", connection_id)
         return ws_unauthorized()
 
-    user_id = claims["sub"]
+    user_id = claims.get("sub")
+    if not user_id:
+        logger.warning("Token missing 'sub' claim: connectionId=%s", connection_id)
+        return ws_unauthorized()
     logger.info("Authenticated userId=%s connectionId=%s", user_id, connection_id)
 
     # Store connection

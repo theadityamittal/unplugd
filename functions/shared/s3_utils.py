@@ -47,8 +47,16 @@ def delete_objects_by_prefix(bucket: str, prefix: str) -> int:
         if not objects:
             continue
         delete_keys: list[dict[str, str]] = [{"Key": obj["Key"]} for obj in objects]
-        _s3.delete_objects(Bucket=bucket, Delete={"Objects": delete_keys})
-        deleted_count += len(delete_keys)
+        response = _s3.delete_objects(Bucket=bucket, Delete={"Objects": delete_keys})
+        errors = response.get("Errors", [])
+        if errors:
+            logger.error(
+                "Failed to delete %d objects from s3://%s/%s",
+                len(errors),
+                bucket,
+                prefix,
+            )
+        deleted_count += len(delete_keys) - len(errors)
 
     logger.info("Deleted %d objects from s3://%s/%s", deleted_count, bucket, prefix)
     return deleted_count

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -20,6 +21,19 @@ from shared.s3_utils import generate_presigned_upload_url
 from ulid import ULID
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_filename(filename: str) -> str:
+    """Strip path components and unsafe characters from a user-provided filename."""
+    # Remove any directory components (forward and back slashes)
+    basename = filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    # Replace unsafe characters with underscores, keep alphanumeric, dots, hyphens, spaces
+    basename = re.sub(r"[^\w\s.\-]", "_", basename)
+    # Strip leading/trailing dots and spaces
+    basename = basename.strip(". ")
+    if not basename:
+        basename = "upload"
+    return basename
 
 
 @handle_errors
@@ -39,7 +53,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         )
 
     song_id = str(ULID())
-    s3_key = f"{UPLOAD_KEY_PREFIX}/{user_id}/{song_id}/{filename}"
+    safe_filename = _sanitize_filename(filename)
+    s3_key = f"{UPLOAD_KEY_PREFIX}/{user_id}/{song_id}/{safe_filename}"
     logger.info("Generated songId=%s s3Key=%s", song_id, s3_key)
 
     upload_url = generate_presigned_upload_url(s3_key, content_type)

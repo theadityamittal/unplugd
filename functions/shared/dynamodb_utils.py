@@ -72,19 +72,30 @@ def update_song(
     return response["Attributes"]  # type: ignore[return-value]
 
 
+def _query_all(table: Any, **kwargs: Any) -> list[dict[str, Any]]:
+    """Query DynamoDB with automatic pagination."""
+    items: list[dict[str, Any]] = []
+    response = table.query(**kwargs)
+    items.extend(response["Items"])
+    while "LastEvaluatedKey" in response:
+        response = table.query(ExclusiveStartKey=response["LastEvaluatedKey"], **kwargs)
+        items.extend(response["Items"])
+    return items
+
+
 def query_songs_by_user(user_id: str) -> list[dict[str, Any]]:
-    response = _songs_table().query(
+    return _query_all(
+        _songs_table(),
         KeyConditionExpression=Key("userId").eq(user_id),
     )
-    return response["Items"]  # type: ignore[return-value]
 
 
 def query_songs_by_status(user_id: str, status: str) -> list[dict[str, Any]]:
-    response = _songs_table().query(
+    return _query_all(
+        _songs_table(),
         IndexName=STATUS_INDEX,
         KeyConditionExpression=Key("userId").eq(user_id) & Key("status").eq(status),
     )
-    return response["Items"]  # type: ignore[return-value]
 
 
 def delete_song(user_id: str, song_id: str) -> None:
@@ -110,11 +121,11 @@ def get_connection(connection_id: str) -> dict[str, Any] | None:
 
 
 def query_connections_by_user(user_id: str) -> list[dict[str, Any]]:
-    response = _connections_table().query(
+    return _query_all(
+        _connections_table(),
         IndexName=USER_INDEX,
         KeyConditionExpression=Key("userId").eq(user_id),
     )
-    return response["Items"]  # type: ignore[return-value]
 
 
 def delete_connection(connection_id: str) -> None:

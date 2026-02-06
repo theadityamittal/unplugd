@@ -102,3 +102,46 @@ def test_song_id_is_unique(dynamodb_tables: dict[str, Any], s3_buckets: dict[str
     body1 = json.loads(r1["body"])
     body2 = json.loads(r2["body"])
     assert body1["songId"] != body2["songId"]
+
+
+def test_sanitize_filename_strips_path_traversal() -> None:
+    from functions.upload_request.handler import _sanitize_filename
+
+    assert _sanitize_filename("../../../etc/passwd") == "passwd"
+    assert _sanitize_filename("path/to/song.mp3") == "song.mp3"
+    assert _sanitize_filename("path\\to\\song.mp3") == "song.mp3"
+
+
+def test_sanitize_filename_replaces_special_chars() -> None:
+    from functions.upload_request.handler import _sanitize_filename
+
+    result = _sanitize_filename("my song (remix) [v2].mp3")
+    assert ".." not in result
+    assert "/" not in result
+    assert "\\" not in result
+
+
+def test_sanitize_filename_empty_fallback() -> None:
+    from functions.upload_request.handler import _sanitize_filename
+
+    assert _sanitize_filename("...") == "upload"
+    assert _sanitize_filename("") == "upload"
+
+
+def test_filename_sanitized_in_s3_key(
+    dynamodb_tables: dict[str, Any], s3_buckets: dict[str, Any]
+) -> None:
+    """Path traversal in filename should not appear in the S3 key."""
+    from functions.upload_request.handler import lambda_handler
+
+    event = _make_event({"filename": "../../evil.mp3", "contentType": "audio/mpeg"})
+
+    response = lambda_handler(event, None)
+
+    assert response["statusCode"] == 201
+    body = json.loads(response["body"])
+    songs_table = dynamodb_tables["songs_table"]
+    result = songs_table.get_item(Key={"userId": "user-123", "songId": body["songId"]})
+    s3_key = result["Item"]["s3Key"]
+    assert ".." not in s3_key
+    assert "evil.mp3" in s3_key

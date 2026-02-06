@@ -52,7 +52,7 @@ def handle_errors(func: HandlerFunc) -> HandlerFunc:
             logger.warning("Not found: %s", exc.message)
             return not_found(exc.message)
         except AppError as exc:
-            logger.error("Application error: %s", exc.message)
+            logger.exception("Application error: %s", exc.message)
             return internal_error(exc.message)
         except Exception:
             logger.exception("Unhandled exception")

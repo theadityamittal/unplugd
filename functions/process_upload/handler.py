@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import tempfile
 from typing import Any
 from urllib.parse import unquote_plus
+from uuid import uuid4
 
 import boto3
 import mutagen
@@ -25,7 +27,7 @@ logger = logging.getLogger(__name__)
 _s3 = boto3.client("s3")
 
 
-def lambda_handler(event: dict[str, Any], context: Any) -> None:
+def lambda_handler(event: dict[str, Any], _context: Any) -> None:
     for record in event["Records"]:
         bucket = record["s3"]["bucket"]["name"]
         key = unquote_plus(record["s3"]["object"]["key"])
@@ -37,7 +39,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> None:
         parts = key.split("/")
         if len(parts) < 4 or parts[0] != "uploads":
             logger.error("Unexpected S3 key format: %s", key)
-            return
+            continue
         user_id = parts[1]
         song_id = parts[2]
         filename = "/".join(parts[3:])
@@ -86,7 +88,7 @@ def _validate_and_process(
 
         try:
             audio = mutagen.File(tmp.name)
-        except Exception:
+        except (mutagen.MutagenError, OSError):
             logger.warning("Mutagen failed to parse file: %s", filename, exc_info=True)
             audio = None
 
@@ -160,9 +162,15 @@ def _validate_and_process(
         sfn = boto3.client("stepfunctions")
         sfn.start_execution(
             stateMachineArn=state_machine_arn,
-            name=f"{song_id}",
-            input=f'{{"userId": "{user_id}", "songId": "{song_id}", '
-            f'"bucket": "{UPLOAD_BUCKET_NAME}", "key": "{key}"}}',
+            name=f"{song_id}-{uuid4().hex[:8]}",
+            input=json.dumps(
+                {
+                    "userId": user_id,
+                    "songId": song_id,
+                    "bucket": UPLOAD_BUCKET_NAME,
+                    "key": key,
+                }
+            ),
         )
         logger.info("Started Step Functions execution for songId=%s", song_id)
     else:
