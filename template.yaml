@@ -18,6 +18,9 @@ Parameters:
     Default: unplugd
     Description: Application name used for resource naming
 
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
+
 Globals:
   Function:
     Runtime: python3.12
@@ -29,11 +32,41 @@ Globals:
       Variables:
         ENVIRONMENT: !Ref Environment
         APP_NAME: !Ref AppName
-        AWS_ACCOUNT_ID: !Ref AWS::AccountId
+        SONGS_TABLE_NAME: !GetAtt StorageStack.Outputs.SongsTableName
+        CONNECTIONS_TABLE_NAME: !GetAtt StorageStack.Outputs.ConnectionsTableName
+        UPLOAD_BUCKET_NAME: !GetAtt StorageStack.Outputs.UploadBucketName
+        OUTPUT_BUCKET_NAME: !GetAtt StorageStack.Outputs.OutputBucketName
+        CLOUDFRONT_DOMAIN: !GetAtt StorageStack.Outputs.CloudFrontDomainName
+        COGNITO_USER_POOL_ID: !GetAtt AuthStack.Outputs.UserPoolId
+        DLQ_URL: !GetAtt MonitoringStack.Outputs.DeadLetterQueueUrl
 
 Resources:
-  # Placeholder — resources added in Phases 1-9
-  # Phase 1: DynamoDB tables, S3 buckets, CloudFront, Cognito, SQS DLQ
+  # ---- Nested Stacks ----
+
+  StorageStack:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: ./templates/storage.yaml
+      Parameters:
+        Environment: !Ref Environment
+        AppName: !Ref AppName
+
+  AuthStack:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: ./templates/auth.yaml
+      Parameters:
+        Environment: !Ref Environment
+        AppName: !Ref AppName
+
+  MonitoringStack:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: ./templates/monitoring.yaml
+      Parameters:
+        Environment: !Ref Environment
+        AppName: !Ref AppName
+
   # Phase 2: REST API, upload Lambda functions, CommonLayer
   # Phase 3: WebSocket API, WS Lambda functions
   # Phase 4: ECR repo, ECS Cluster, Demucs task definition
@@ -42,13 +75,6 @@ Resources:
   # Phase 7: Song library API routes
   # Phase 9: CloudWatch dashboard, alarms
 
-  PlaceholderParam:
-    Type: AWS::SSM::Parameter
-    Properties:
-      Type: String
-      Value: !Sub "${AppName}-${Environment}-initialized"
-      Description: Placeholder parameter to validate the SAM template deploys correctly
-
 Outputs:
   StackName:
     Description: CloudFormation stack name
@@ -56,3 +82,39 @@ Outputs:
   Environment:
     Description: Deployment environment
     Value: !Ref Environment
+
+  # Storage
+  SongsTableName:
+    Value: !GetAtt StorageStack.Outputs.SongsTableName
+  SongsTableArn:
+    Value: !GetAtt StorageStack.Outputs.SongsTableArn
+  ConnectionsTableName:
+    Value: !GetAtt StorageStack.Outputs.ConnectionsTableName
+  ConnectionsTableArn:
+    Value: !GetAtt StorageStack.Outputs.ConnectionsTableArn
+  UploadBucketName:
+    Value: !GetAtt StorageStack.Outputs.UploadBucketName
+  UploadBucketArn:
+    Value: !GetAtt StorageStack.Outputs.UploadBucketArn
+  OutputBucketName:
+    Value: !GetAtt StorageStack.Outputs.OutputBucketName
+  OutputBucketArn:
+    Value: !GetAtt StorageStack.Outputs.OutputBucketArn
+  CloudFrontDomainName:
+    Value: !GetAtt StorageStack.Outputs.CloudFrontDomainName
+  CloudFrontDistributionId:
+    Value: !GetAtt StorageStack.Outputs.CloudFrontDistributionId
+
+  # Auth
+  CognitoUserPoolId:
+    Value: !GetAtt AuthStack.Outputs.UserPoolId
+  CognitoUserPoolArn:
+    Value: !GetAtt AuthStack.Outputs.UserPoolArn
+  CognitoUserPoolClientId:
+    Value: !GetAtt AuthStack.Outputs.UserPoolClientId
+
+  # Monitoring
+  DeadLetterQueueUrl:
+    Value: !GetAtt MonitoringStack.Outputs.DeadLetterQueueUrl
+  DeadLetterQueueArn:
+    Value: !GetAtt MonitoringStack.Outputs.DeadLetterQueueArn
