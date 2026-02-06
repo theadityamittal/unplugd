@@ -1,0 +1,9 @@
+{
+  "requestContext": {
+    "routeKey": "$disconnect",
+    "connectionId": "test-conn-123",
+    "eventType": "DISCONNECT",
+    "apiId": "test-api-id"
+  },
+  "isBase64Encoded": false
+}

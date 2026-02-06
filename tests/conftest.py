@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from collections.abc import Generator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import boto3
+import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
 from moto import mock_aws
 
 # Add functions/ to path so `from shared.xxx import ...` works in tests
@@ -28,6 +33,7 @@ os.environ["CONNECTIONS_TABLE_NAME"] = "unplugd-test-connections"
 os.environ["UPLOAD_BUCKET_NAME"] = "unplugd-test-uploads-123456789012"
 os.environ["OUTPUT_BUCKET_NAME"] = "unplugd-test-output-123456789012"
 os.environ["STATE_MACHINE_ARN"] = ""
+os.environ["WEBSOCKET_API_ENDPOINT"] = "https://test123.execute-api.us-east-1.amazonaws.com/test"
 
 
 @pytest.fixture()
@@ -99,3 +105,103 @@ def s3_buckets() -> Generator[dict[str, Any], None, None]:
             "upload": "unplugd-test-uploads-123456789012",
             "output": "unplugd-test-output-123456789012",
         }
+
+
+# ---- Cognito JWT test keys ----
+
+TEST_USER_POOL_ID = "us-east-1_TestPool123"
+TEST_ISSUER = f"https://cognito-idp.us-east-1.amazonaws.com/{TEST_USER_POOL_ID}"
+TEST_KID = "test-key-id-1"
+
+
+@dataclass
+class CognitoJwtKeys:
+    """Test RSA keys and helper for signing Cognito-like JWTs."""
+
+    private_key: rsa.RSAPrivateKey
+    public_key: rsa.RSAPublicKey
+    kid: str
+    issuer: str
+    user_pool_id: str
+
+    def sign_token(
+        self,
+        claims: dict[str, Any] | None = None,
+        *,
+        expired: bool = False,
+    ) -> str:
+        """Sign a JWT with the test RSA private key.
+
+        Default claims produce a valid Cognito ID token for user "test-user-123".
+        """
+        now = int(time.time())
+        default_claims: dict[str, Any] = {
+            "sub": "test-user-123",
+            "iss": self.issuer,
+            "token_use": "id",
+            "email": "test@example.com",
+            "iat": now,
+            "exp": now - 3600 if expired else now + 3600,
+            "auth_time": now,
+        }
+        if claims:
+            default_claims.update(claims)
+
+        return jwt.encode(
+            default_claims,
+            self.private_key,
+            algorithm="RS256",
+            headers={"kid": self.kid},
+        )
+
+
+@pytest.fixture()
+def cognito_jwt_keys() -> Generator[CognitoJwtKeys, None, None]:
+    """Provide test RSA keys and patch jwt_utils to use them for JWT validation."""
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public_key = private_key.public_key()
+
+    keys = CognitoJwtKeys(
+        private_key=private_key,
+        public_key=public_key,
+        kid=TEST_KID,
+        issuer=TEST_ISSUER,
+        user_pool_id=TEST_USER_POOL_ID,
+    )
+
+    # Build a mock PyJWKClient that returns our test public key
+    import json as json_mod
+
+    from jwt import PyJWK
+
+    jwk_dict = {
+        "kty": "RSA",
+        "kid": TEST_KID,
+        "use": "sig",
+        "alg": "RS256",
+        "n": _base64url_uint(public_key.public_numbers().n),
+        "e": _base64url_uint(public_key.public_numbers().e),
+    }
+    mock_jwk = PyJWK.from_json(json_mod.dumps(jwk_dict))
+
+    class MockPyJWKClient:
+        def get_signing_key_from_jwt(self, token: str) -> Any:
+            header = jwt.get_unverified_header(token)
+            if header.get("kid") != TEST_KID:
+                raise jwt.exceptions.PyJWKClientError("Key not found")
+            return mock_jwk
+
+    with (
+        patch("shared.jwt_utils._get_jwks_client", return_value=MockPyJWKClient()),
+        patch("shared.jwt_utils.COGNITO_USER_POOL_ID", TEST_USER_POOL_ID),
+    ):
+        yield keys
+
+
+def _base64url_uint(val: int) -> str:
+    """Encode an integer as a base64url string (for JWK 'n' and 'e' fields)."""
+    import base64
+
+    byte_length = (val.bit_length() + 7) // 8
+    val_bytes = val.to_bytes(byte_length, byteorder="big")
+    return base64.urlsafe_b64encode(val_bytes).rstrip(b"=").decode("ascii")

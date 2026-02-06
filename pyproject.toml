@@ -18,6 +18,8 @@ dev = [
     "mutagen>=1.47",
     "python-ulid>=2.0",
     "pre-commit>=4.0",
+    "pyjwt>=2.11.0",
+    "cryptography>=46.0.4",
 ]
 
 [tool.ruff]

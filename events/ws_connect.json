@@ -1,0 +1,12 @@
+{
+  "requestContext": {
+    "routeKey": "$connect",
+    "connectionId": "test-conn-123",
+    "eventType": "CONNECT",
+    "apiId": "test-api-id"
+  },
+  "queryStringParameters": {
+    "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.REPLACE_WITH_REAL_TOKEN"
+  },
+  "isBase64Encoded": false
+}

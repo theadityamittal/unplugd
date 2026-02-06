@@ -173,7 +173,68 @@ Resources:
         CognitoUserPoolArn: !GetAtt AuthStack.Outputs.UserPoolArn
         UploadRequestFunctionArn: !GetAtt UploadRequestFunction.Arn
 
-  # Phase 3: WebSocket API, WS Lambda functions
+  # ---- Phase 3: WebSocket Lambda Functions ----
+
+  WsConnectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-ws-connect"
+      Handler: ws_connect/handler.lambda_handler
+      CodeUri: functions/
+      Layers:
+        - !Ref CommonLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !GetAtt StorageStack.Outputs.ConnectionsTableName
+
+  WsDisconnectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-ws-disconnect"
+      Handler: ws_disconnect/handler.lambda_handler
+      CodeUri: functions/
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !GetAtt StorageStack.Outputs.ConnectionsTableName
+
+  WsDefaultFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-ws-default"
+      Handler: ws_default/handler.lambda_handler
+      CodeUri: functions/
+
+  SendProgressFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-send-progress"
+      Handler: send_progress/handler.lambda_handler
+      CodeUri: functions/
+      Environment:
+        Variables:
+          WEBSOCKET_API_ENDPOINT: !GetAtt WebSocketStack.Outputs.WebSocketManagementEndpoint
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !GetAtt StorageStack.Outputs.ConnectionsTableName
+        - Statement:
+            - Effect: Allow
+              Action:
+                - execute-api:ManageConnections
+              Resource: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketStack.Outputs.WebSocketApiId}/*"
+
+  # ---- Phase 3: WebSocket API ----
+
+  WebSocketStack:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: ./templates/websocket.yaml
+      Parameters:
+        Environment: !Ref Environment
+        AppName: !Ref AppName
+        WsConnectFunctionArn: !GetAtt WsConnectFunction.Arn
+        WsDisconnectFunctionArn: !GetAtt WsDisconnectFunction.Arn
+        WsDefaultFunctionArn: !GetAtt WsDefaultFunction.Arn
+
   # Phase 4: ECR repo, ECS Cluster, Demucs task definition
   # Phase 5: Whisper ECR repo, task definition
   # Phase 6: Step Functions state machine, VPC, Lambda functions
@@ -222,3 +283,9 @@ Outputs:
   # API
   ApiEndpoint:
     Value: !GetAtt ApiStack.Outputs.ApiEndpoint
+
+  # WebSocket
+  WebSocketApiEndpoint:
+    Value: !GetAtt WebSocketStack.Outputs.WebSocketApiEndpoint
+  SendProgressFunctionArn:
+    Value: !GetAtt SendProgressFunction.Arn
