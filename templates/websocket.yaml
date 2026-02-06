@@ -71,7 +71,15 @@ Resources:
       ApiId: !Ref WebSocketApi
       RouteKey: $default
       AuthorizationType: NONE
+      RouteResponseSelectionExpression: "$default"
       Target: !Sub "integrations/${DefaultIntegration}"
+
+  DefaultRouteResponse:
+    Type: AWS::ApiGatewayV2::RouteResponse
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteId: !Ref DefaultRoute
+      RouteResponseKey: $default
 
   # ---- Stage ----
 

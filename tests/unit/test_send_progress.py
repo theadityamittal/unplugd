@@ -6,7 +6,6 @@ import logging
 from typing import Any
 from unittest.mock import patch
 
-from moto import mock_aws
 from shared.dynamodb_utils import get_connection, put_connection
 
 
@@ -22,7 +21,6 @@ def _make_progress_event(
     return event
 
 
-@mock_aws
 @patch("functions.send_progress.handler.send_to_connection")
 def test_happy_path(
     mock_send: Any,
@@ -51,7 +49,6 @@ def test_happy_path(
         assert args[1] == message
 
 
-@mock_aws
 @patch("functions.send_progress.handler.send_to_connection")
 def test_no_connections_logs_warning(
     mock_send: Any,
@@ -71,7 +68,6 @@ def test_no_connections_logs_warning(
     assert any("No active connections" in record.message for record in caplog.records)
 
 
-@mock_aws
 @patch("functions.send_progress.handler.send_to_connection")
 def test_stale_connection_cleanup(
     mock_send: Any,

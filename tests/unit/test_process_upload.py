@@ -7,7 +7,6 @@ import struct
 from typing import Any
 
 import boto3
-from moto import mock_aws
 from shared.constants import MAX_DURATION_SECONDS, MAX_FILE_SIZE_BYTES
 
 
@@ -69,7 +68,6 @@ def _setup_song(dynamodb_tables: dict[str, Any], user_id: str, song_id: str) -> 
     )
 
 
-@mock_aws
 def test_happy_path(dynamodb_tables: dict[str, Any], s3_buckets: dict[str, Any]) -> None:
     user_id = "user-123"
     song_id = "song-abc"
@@ -98,7 +96,6 @@ def test_happy_path(dynamodb_tables: dict[str, Any], s3_buckets: dict[str, Any])
     assert int(item["durationSec"]) > 0
 
 
-@mock_aws
 def test_file_too_large(dynamodb_tables: dict[str, Any], s3_buckets: dict[str, Any]) -> None:
     user_id = "user-123"
     song_id = "song-abc"
@@ -123,7 +120,6 @@ def test_file_too_large(dynamodb_tables: dict[str, Any], s3_buckets: dict[str, A
     assert "size" in item["errorMessage"].lower() or "exceeds" in item["errorMessage"].lower()
 
 
-@mock_aws
 def test_invalid_format(dynamodb_tables: dict[str, Any], s3_buckets: dict[str, Any]) -> None:
     user_id = "user-123"
     song_id = "song-abc"
@@ -149,7 +145,6 @@ def test_invalid_format(dynamodb_tables: dict[str, Any], s3_buckets: dict[str, A
     assert "format" in err or "unrecognized" in err
 
 
-@mock_aws
 def test_corrupt_file_with_known_extension(
     dynamodb_tables: dict[str, Any], s3_buckets: dict[str, Any]
 ) -> None:
@@ -177,7 +172,6 @@ def test_corrupt_file_with_known_extension(
     assert "unrecognized" in err or "unsupported" in err
 
 
-@mock_aws
 def test_duration_too_long(dynamodb_tables: dict[str, Any], s3_buckets: dict[str, Any]) -> None:
     user_id = "user-123"
     song_id = "song-abc"
