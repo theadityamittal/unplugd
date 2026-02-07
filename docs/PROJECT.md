@@ -265,9 +265,6 @@ unplugd/
 ├── samconfig.toml                    # SAM deploy config (dev/prod)
 ├── pyproject.toml                    # uv + Python 3.12
 │
-├── .claude/
-│   └── PROJECT_PLAN.md              # Implementation plan & phases
-│
 ├── docs/
 │   └── PROJECT.md                    # This file
 │

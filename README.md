@@ -80,8 +80,6 @@ unplugd/
 ├── tests/                     # 78 unit tests across 15 files
 ├── docs/
 │   └── PROJECT.md             # Full spec (API, schemas, formats, costs)
-├── .claude/
-│   └── PROJECT_PLAN.md        # Implementation roadmap & phases
 └── _reference/                # Legacy U-Net codebase (archived)
 ```
 
@@ -152,7 +150,7 @@ docker build --provenance=false --platform linux/amd64 \
 ## Documentation
 
 - **[docs/PROJECT.md](docs/PROJECT.md)** — Full specification (API reference, DB schemas, lyrics format, mixing presets, cost estimates)
-- **[.claude/PROJECT_PLAN.md](.claude/PROJECT_PLAN.md)** — Implementation roadmap with phase details and status
+- **[docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md)** — Implementation roadmap with phase details and status
 
 ## License
 
