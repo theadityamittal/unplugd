@@ -16,7 +16,7 @@ Unplugd transforms any music file into an interactive karaoke and practice tool.
 
 Users can toggle individual stems on/off for different use cases — karaoke (vocals off), drum practice (drums off), bass practice (bass off), or isolate vocals for learning.
 
-**v1**: Backend API only (serverless AWS). **v2**: Flutter iOS app + custom ML model on SageMaker + Spotify integration.
+**v1**: Backend API + React/Next.js web app. **v2**: Custom ML model trained on SageMaker + model A/B comparison.
 
 ---
 
@@ -38,13 +38,12 @@ Users can toggle individual stems on/off for different use cases — karaoke (vo
 - Privacy: original uploads deleted after processing
 
 ### Planned (v2)
-- Flutter iOS app (App Store submission)
-- Custom source separation model trained on SageMaker
-- Spotify library integration (browse + metadata)
+- Custom source separation model (Band-Split RNN) trained on SageMaker
+- Model A/B comparison: Demucs vs custom model, user-selectable
+- Audio fingerprint dedup (skip re-processing duplicate songs)
 - External lyrics API fallback (Musixmatch/Genius)
 - Per-user CloudFront signed URLs
 - Usage tiers (free/premium)
-- Android app
 
 ---
 
@@ -52,8 +51,8 @@ Users can toggle individual stems on/off for different use cases — karaoke (vo
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌───────────────────┐
-│ Client App   │────►│ API Gateway  │────►│ UploadRequest λ   │
-│ (future)     │     │ (REST+Auth)  │     │ → presigned URL   │
+│ Web App      │────►│ API Gateway  │────►│ UploadRequest λ   │
+│ (Next.js)    │     │ (REST+Auth)  │     │ → presigned URL   │
 └─────────────┘     └──────────────┘     └───────────────────┘
        │                                          │
        │  PUT file to S3                          │ DynamoDB: PENDING_UPLOAD
@@ -75,7 +74,7 @@ Users can toggle individual stems on/off for different use cases — karaoke (vo
      ┌─────────────────┐                             │ Cleanup λ    │
      │ SendProgress λ  │                             │ delete upload│
      │ → WebSocket API │                             └──────┬───────┘
-     │ → Client App    │                                    ▼
+     │ → Web App       │                                    ▼
      └─────────────────┘                             ┌──────────────┐
                                                      │ Notify λ     │
          ┌──────────────────┐                        │ → WebSocket  │
@@ -90,6 +89,7 @@ Users can toggle individual stems on/off for different use cases — karaoke (vo
 
 | Layer | Technology |
 |-------|-----------|
+| Frontend | React / Next.js (App Router) |
 | API | API Gateway (REST + WebSocket) |
 | Compute | AWS Lambda (Python 3.12) + ECS Fargate (Docker) |
 | Orchestration | AWS Step Functions |
@@ -98,6 +98,7 @@ Users can toggle individual stems on/off for different use cases — karaoke (vo
 | Storage | S3 (uploads + output) + CloudFront CDN |
 | ML: Separation | Meta Demucs `htdemucs_ft` (Fargate, CPU) |
 | ML: Lyrics | OpenAI Whisper `base` (Fargate, CPU, word timestamps) |
+| ML: Training | AWS SageMaker (v2 — custom Band-Split RNN) |
 | IaC | SAM / CloudFormation |
 | CI/CD | GitHub Actions |
 | Python deps | uv (Python 3.12) |
@@ -271,10 +272,13 @@ unplugd/
 │   └── PROJECT.md                    # This file
 │
 ├── templates/                        # Nested SAM/CloudFormation templates
-│   ├── api.yaml                     # API Gateway + Lambda functions
+│   ├── api.yaml                     # REST API Gateway + routes
 │   ├── auth.yaml                    # Cognito user pool & clients
-│   ├── monitoring.yaml              # CloudWatch dashboards & alarms
-│   └── storage.yaml                 # S3 buckets + DynamoDB tables
+│   ├── ecs.yaml                     # ECR + ECS Fargate task definitions
+│   ├── monitoring.yaml              # SQS DLQ + CloudWatch alarms
+│   ├── storage.yaml                 # DynamoDB tables + S3 output bucket
+│   ├── vpc.yaml                     # VPC, subnets, IGW, security groups
+│   └── websocket.yaml               # WebSocket API Gateway
 │
 ├── functions/                        # Lambda functions
 │   ├── shared/                       # Shared utilities (Lambda layer)
@@ -294,6 +298,7 @@ unplugd/
 │   └── failure_handler/              # Step Functions: mark FAILED
 │
 ├── containers/                       # ECS Fargate Docker images
+│   ├── shared/                       # Shared progress reporting utilities
 │   ├── demucs/                       # Demucs source separation
 │   └── whisper/                      # Whisper lyrics extraction
 │
@@ -302,14 +307,23 @@ unplugd/
 ├── events/                           # SAM local test events
 │
 ├── tests/                            # Unit + integration tests
-│   ├── conftest.py                  # Shared fixtures (moto mocks, env vars)
-│   ├── unit/                        # Unit tests per module
+│   ├── conftest.py                  # Shared fixtures (moto mocks, JWT keys, env vars)
+│   ├── unit/                        # Unit tests (78 tests across 15 files)
 │   │   ├── test_constants.py
 │   │   ├── test_dynamodb_utils.py
 │   │   ├── test_error_handling.py
 │   │   ├── test_process_upload.py
 │   │   ├── test_response.py
-│   │   └── test_upload_request.py
+│   │   ├── test_upload_request.py
+│   │   ├── test_jwt_utils.py
+│   │   ├── test_websocket.py
+│   │   ├── test_ws_connect.py
+│   │   ├── test_ws_disconnect.py
+│   │   ├── test_ws_default.py
+│   │   ├── test_send_progress.py
+│   │   ├── test_s3_utils.py
+│   │   ├── test_progress.py
+│   │   └── test_entrypoint_demucs.py
 │   └── integration/                 # Integration tests
 │
 ├── .github/workflows/                # CI/CD pipelines
@@ -320,7 +334,15 @@ unplugd/
 
 ## Cost Estimates
 
-### Dev Environment (low usage)
+### Per-Song Processing (3-min song, Fargate SPOT)
+
+| Component | Config | Time | Cost |
+|-----------|--------|------|------|
+| Demucs | 4 vCPU, 16 GB | 8.5 min | $0.010 |
+| Whisper | 2 vCPU, 8 GB | ~5 min | $0.003 |
+| **Total** | | ~13.5 min | **$0.013** |
+
+### Dev Environment (50 songs/month)
 
 | Resource | ~Monthly Cost |
 |----------|--------------|
@@ -329,11 +351,11 @@ unplugd/
 | DynamoDB | $0.25 |
 | S3 (10GB) | $0.23 |
 | CloudFront (10GB) | $0.85 |
-| Fargate SPOT (50 songs) | $2-5 |
+| Fargate SPOT (50 songs) | $0.65 |
 | ECR | $0.30 |
 | CloudWatch | $0.50 |
 | Cognito (50 users) | Free |
-| **Total** | **~$5-8** |
+| **Total** | **~$3-4** |
 
 ### Production (1000 songs/month)
 
@@ -344,11 +366,11 @@ unplugd/
 | DynamoDB | $5-10 |
 | S3 (200GB) | $5 |
 | CloudFront (500GB) | $45 |
-| Fargate SPOT (1000 songs) | $40-80 |
+| Fargate SPOT (1000 songs) | $13 |
 | ECR | $1 |
 | CloudWatch | $5 |
 | Cognito (1000 users) | Free |
-| **Total** | **~$110-160** |
+| **Total** | **~$80-90** |
 
 ---
 

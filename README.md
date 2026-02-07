@@ -1,6 +1,6 @@
 # Unplugd
 
-Serverless AWS karaoke backend — upload any song, get separated stems and synced lyrics.
+Serverless AWS karaoke platform — upload any song, get separated stems and synced lyrics.
 
 ## What It Does
 
@@ -21,8 +21,9 @@ Users toggle stems on/off: karaoke (vocals off), drum practice (drums off), bass
 | Auth | Cognito |
 | Database | DynamoDB |
 | Storage | S3 (presigned URLs) |
-| ML | Demucs `htdemucs_ft` + Whisper `base` |
+| ML | Demucs `htdemucs_ft` + Whisper `base` (v2: custom model via SageMaker) |
 | IaC | SAM / CloudFormation (nested stacks) |
+| Frontend | React / Next.js (planned) |
 | Python | uv (3.12) |
 
 ## Architecture
@@ -47,27 +48,41 @@ Client  -->  API Gateway  -->  UploadRequest Lambda (presigned URL)
 unplugd/
 ├── template.yaml              # Root SAM template (orchestrates nested stacks)
 ├── templates/                 # Nested CloudFormation templates
-│   ├── storage.yaml           # DynamoDB, S3
-│   ├── auth.yaml              # Cognito
-│   └── monitoring.yaml        # SQS DLQ, CloudWatch alarms
+│   ├── api.yaml               # REST API Gateway + routes
+│   ├── auth.yaml              # Cognito user pool & clients
+│   ├── ecs.yaml               # ECR + ECS Fargate task definitions
+│   ├── monitoring.yaml        # SQS DLQ + CloudWatch alarms
+│   ├── storage.yaml           # DynamoDB tables + S3 output bucket
+│   ├── vpc.yaml               # VPC, subnets, IGW, security groups
+│   └── websocket.yaml         # WebSocket API Gateway
 ├── functions/                 # Lambda handlers
-│   ├── shared/                # Shared utilities (constants, DDB/S3 helpers, error handling)
+│   ├── shared/                # Shared utilities (Lambda layer)
 │   ├── upload_request/        # POST /songs/upload-url
 │   ├── process_upload/        # S3 trigger → validate → Step Functions
+│   ├── ws_connect/            # WebSocket $connect (JWT auth)
+│   ├── ws_disconnect/         # WebSocket $disconnect
+│   ├── ws_default/            # WebSocket $default (ping/pong)
+│   ├── send_progress/         # Push progress via WebSocket
 │   ├── list_songs/            # GET /songs
 │   ├── get_song/              # GET /songs/{songId}
 │   ├── delete_song/           # DELETE /songs/{songId}
-│   └── ...                    # WebSocket, progress, completion handlers
+│   ├── get_presets/           # GET /presets
+│   ├── completion/            # Step Functions: mark COMPLETED
+│   ├── cleanup/               # Step Functions: delete upload
+│   ├── notify/                # Step Functions: notify completion
+│   └── failure_handler/       # Step Functions: mark FAILED
 ├── containers/                # Fargate Docker images
+│   ├── shared/                # Shared progress reporting
 │   ├── demucs/                # Source separation
 │   └── whisper/               # Lyrics extraction
 ├── layers/common/             # Lambda layer (symlink → functions/shared)
 ├── statemachines/             # Step Functions ASL definitions
-├── tests/                     # Unit + integration tests
-├── .claude/                   # Project docs (gitignored)
-│   ├── PROJECT.md             # Full spec (API, schemas, formats)
-│   └── PROJECT_PLAN.md        # Implementation roadmap
-└── _reference/                # Legacy codebase (archived)
+├── tests/                     # 78 unit tests across 15 files
+├── docs/
+│   └── PROJECT.md             # Full spec (API, schemas, formats, costs)
+├── .claude/
+│   └── PROJECT_PLAN.md        # Implementation roadmap & phases
+└── _reference/                # Legacy U-Net codebase (archived)
 ```
 
 ## Prerequisites
@@ -100,23 +115,44 @@ sam deploy --config-env prod
 ## Development
 
 ```bash
-# Run unit tests
+# Run unit tests (78 tests)
 uv run pytest tests/unit/ -v
 
 # Lint
 uv run ruff check .
+
+# Format check
+uv run ruff format --check .
 
 # Type check
 uv run mypy functions/shared/
 
 # Local Lambda testing
 sam local invoke UploadRequestFunction -e events/upload_request.json
+
+# Build Fargate containers
+docker build --provenance=false --platform linux/amd64 \
+  -f containers/demucs/Dockerfile -t unplugd-demucs .
 ```
+
+## Current Status
+
+**Phases 0-4 complete** — 78 unit tests passing.
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 0-4 | Scaffold, Storage/Auth, Upload API, WebSocket, Demucs Container | **Done** |
+| 4.5 | Code audit refactoring | Pending |
+| 5 | Whisper Container (lyrics) | Pending |
+| 6 | Step Functions Orchestration | Pending |
+| 7 | Song Library API | Pending |
+| 8 | Web Frontend (React/Next.js) | Pending |
+| 9-12 | CI/CD, SageMaker ML, Model Integration, Hardening | Pending |
 
 ## Documentation
 
-- **[PROJECT.md](PROJECT.md)** — Full specification (API reference, DB schemas, lyrics format, mixing presets, cost estimates)
-- **[PROJECT_PLAN.md](PROJECT_PLAN.md)** — Implementation roadmap with phase details and status
+- **[docs/PROJECT.md](docs/PROJECT.md)** — Full specification (API reference, DB schemas, lyrics format, mixing presets, cost estimates)
+- **[.claude/PROJECT_PLAN.md](.claude/PROJECT_PLAN.md)** — Implementation roadmap with phase details and status
 
 ## License
 
