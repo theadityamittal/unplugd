@@ -93,6 +93,6 @@ def head_object(bucket: str, key: str) -> dict[str, Any] | None:
         response: dict[str, Any] = _s3.head_object(Bucket=bucket, Key=key)
         return response
     except ClientError as exc:
-        if exc.response["Error"]["Code"] == "404":
+        if exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode") == 404:
             return None
         raise

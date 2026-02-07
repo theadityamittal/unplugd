@@ -34,6 +34,7 @@ Globals:
         UPLOAD_BUCKET_NAME: !Sub "${AppName}-${Environment}-uploads-${AWS::AccountId}"
         OUTPUT_BUCKET_NAME: !GetAtt StorageStack.Outputs.OutputBucketName
         COGNITO_USER_POOL_ID: !GetAtt AuthStack.Outputs.UserPoolId
+        COGNITO_APP_CLIENT_ID: !GetAtt AuthStack.Outputs.UserPoolClientId
         DLQ_URL: !GetAtt MonitoringStack.Outputs.DeadLetterQueueUrl
 
 Resources:
@@ -72,6 +73,10 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
       Tags:
         - Key: Environment
           Value: !Ref Environment

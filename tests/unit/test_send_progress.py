@@ -77,7 +77,7 @@ def test_stale_connection_cleanup(
     from functions.send_progress.handler import lambda_handler
 
     # conn-stale returns False (gone), conn-alive returns True
-    mock_send.side_effect = lambda conn_id, msg: conn_id != "conn-stale"
+    mock_send.side_effect = lambda conn_id, _msg: conn_id != "conn-stale"
 
     put_connection({"connectionId": "conn-stale", "userId": "user-123", "ttl": 9999999999})
     put_connection({"connectionId": "conn-alive", "userId": "user-123", "ttl": 9999999999})

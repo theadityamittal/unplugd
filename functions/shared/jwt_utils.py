@@ -7,7 +7,7 @@ from typing import Any
 
 import jwt
 from jwt import PyJWKClient
-from shared.constants import COGNITO_USER_POOL_ID
+from shared.constants import COGNITO_APP_CLIENT_ID, COGNITO_USER_POOL_ID
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,8 @@ def validate_cognito_token(token: str) -> dict[str, Any] | None:
             signing_key.key,
             algorithms=["RS256"],
             issuer=issuer,
-            options={"verify_aud": False},
+            audience=COGNITO_APP_CLIENT_ID or None,
+            options={"verify_aud": bool(COGNITO_APP_CLIENT_ID)},
         )
 
         if claims.get("token_use") != "id":

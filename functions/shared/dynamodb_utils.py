@@ -64,6 +64,7 @@ def update_song(
     response = _songs_table().update_item(
         Key={"userId": user_id, "songId": song_id},
         UpdateExpression="SET " + ", ".join(expr_parts),
+        ConditionExpression="attribute_exists(userId)",
         ExpressionAttributeNames=expr_names,
         ExpressionAttributeValues=expr_values,
         ReturnValues="ALL_NEW",
