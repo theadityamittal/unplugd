@@ -93,6 +93,26 @@ def test_stale_connection_cleanup(
     assert get_connection("conn-alive") is not None
 
 
+@patch("functions.send_progress.handler.send_to_connection")
+def test_exception_triggers_cleanup(
+    mock_send: Any,
+    dynamodb_tables: dict[str, Any],
+) -> None:
+    """Exception in send_to_connection should delete the connection (not just False)."""
+    from functions.send_progress.handler import lambda_handler
+
+    mock_send.side_effect = Exception("connection error")
+
+    put_connection({"connectionId": "conn-err", "userId": "user-123", "ttl": 9999999999})
+
+    message = {"type": "PROGRESS", "songId": "song-1", "progress": 50}
+    event = _make_progress_event(message=message)
+
+    lambda_handler(event, None)
+
+    assert get_connection("conn-err") is None
+
+
 def test_missing_user_id() -> None:
     """Missing userId in event returns None without crashing."""
     from functions.send_progress.handler import lambda_handler

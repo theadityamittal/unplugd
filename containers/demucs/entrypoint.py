@@ -27,6 +27,14 @@ s3_client = boto3.client("s3")
 STEM_NAMES = ("drums", "bass", "other", "vocals")
 TEMP_DIR = "/tmp"
 DEMUCS_TIMEOUT = 1200  # 20 minutes
+REQUIRED_ENV_VARS = (
+    "UPLOAD_BUCKET",
+    "OUTPUT_BUCKET",
+    "S3_INPUT_KEY",
+    "S3_OUTPUT_PREFIX",
+    "USER_ID",
+    "SONG_ID",
+)
 
 
 def download_input(bucket: str, key: str, local_path: str) -> None:
@@ -85,6 +93,10 @@ def upload_stems(stems_dir: str, bucket: str, output_prefix: str) -> None:
 
 def main() -> None:
     """Orchestrate: download -> demucs -> upload with progress milestones."""
+    missing = [v for v in REQUIRED_ENV_VARS if not os.environ.get(v)]
+    if missing:
+        raise RuntimeError(f"Missing required environment variables: {', '.join(missing)}")
+
     try:
         upload_bucket = os.environ["UPLOAD_BUCKET"]
         output_bucket = os.environ["OUTPUT_BUCKET"]
@@ -110,7 +122,7 @@ def main() -> None:
     except Exception as exc:
         logger.exception("Fatal error in demucs entrypoint")
         try:
-            send_failure(str(exc))
+            send_failure(f"{type(exc).__name__}: {exc}")
         except Exception:
             logger.warning("Failed to send failure notification", exc_info=True)
         sys.exit(1)

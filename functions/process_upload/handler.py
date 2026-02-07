@@ -12,6 +12,7 @@ from uuid import uuid4
 
 import boto3
 import mutagen
+from botocore.exceptions import BotoCoreError, ClientError
 from shared.constants import (
     ALLOWED_FORMATS,
     MAX_DURATION_SECONDS,
@@ -46,6 +47,11 @@ def lambda_handler(event: dict[str, Any], _context: Any) -> None:
 
         try:
             _validate_and_process(bucket, key, size, user_id, song_id, filename)
+        except (BotoCoreError, ClientError, OSError):
+            logger.exception(
+                "Transient error processing upload: songId=%s — will retry via DLQ", song_id
+            )
+            raise
         except Exception:
             logger.exception("Failed to process upload: songId=%s", song_id)
             update_song(

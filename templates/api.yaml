@@ -11,6 +11,8 @@ Parameters:
     Type: String
   UploadRequestFunctionArn:
     Type: String
+  CorsOrigin:
+    Type: String
 
 Resources:
   RestApi:
@@ -20,11 +22,12 @@ Resources:
       StageName: !Ref Environment
       Auth:
         DefaultAuthorizer: CognitoAuthorizer
+        AddDefaultAuthorizerToCorsPreflight: false
         Authorizers:
           CognitoAuthorizer:
             UserPoolArn: !Ref CognitoUserPoolArn
       Cors:
-        AllowOrigin: "'*'"
+        AllowOrigin: !Sub "'${CorsOrigin}'"
         AllowHeaders: "'Content-Type,Authorization'"
         AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
       DefinitionBody:
