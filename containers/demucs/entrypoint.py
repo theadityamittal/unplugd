@@ -15,9 +15,9 @@ from pathlib import Path
 import boto3
 
 try:
-    from shared.progress import send_progress  # Docker (flat layout)
+    from shared.progress import send_failure, send_progress  # Docker (flat layout)
 except ImportError:
-    from containers.shared.progress import send_progress  # Tests (package layout)
+    from containers.shared.progress import send_failure, send_progress  # Tests (package layout)
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -26,6 +26,7 @@ s3_client = boto3.client("s3")
 
 STEM_NAMES = ("drums", "bass", "other", "vocals")
 TEMP_DIR = "/tmp"
+DEMUCS_TIMEOUT = 1200  # 20 minutes
 
 
 def download_input(bucket: str, key: str, local_path: str) -> None:
@@ -50,7 +51,7 @@ def run_demucs(input_path: str, output_dir: str) -> str:
     ]
     logger.info("Running demucs: %s", " ".join(cmd))
 
-    result = subprocess.run(cmd, capture_output=True)
+    result = subprocess.run(cmd, capture_output=True, timeout=DEMUCS_TIMEOUT)
 
     if result.returncode != 0:
         stderr = result.stderr.decode("utf-8", errors="replace")
@@ -106,8 +107,12 @@ def main() -> None:
         send_progress(stage="demucs", progress=100, message="All stems uploaded successfully")
         logger.info("Demucs processing complete")
 
-    except Exception:
+    except Exception as exc:
         logger.exception("Fatal error in demucs entrypoint")
+        try:
+            send_failure(str(exc))
+        except Exception:
+            logger.warning("Failed to send failure notification", exc_info=True)
         sys.exit(1)
 
 

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+from botocore.exceptions import ClientError
 from shared.dynamodb_utils import (
     delete_connection,
     delete_song,
@@ -78,3 +80,10 @@ def test_delete_connection(dynamodb_tables: dict[str, Any]) -> None:
     put_connection({"connectionId": "conn1", "userId": "user1", "ttl": 9999999999})
     delete_connection("conn1")
     assert get_connection("conn1") is None
+
+
+def test_update_nonexistent_song_raises(dynamodb_tables: dict[str, Any]) -> None:
+    """update_song raises when song doesn't exist (prevents upsert)."""
+    with pytest.raises(ClientError) as exc_info:
+        update_song("no-user", "no-song", {"status": "PROCESSING"})
+    assert exc_info.value.response["Error"]["Code"] == "ConditionalCheckFailedException"

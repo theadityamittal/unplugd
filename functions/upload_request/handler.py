@@ -37,7 +37,7 @@ def _sanitize_filename(filename: str) -> str:
 
 
 @handle_errors
-def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
+def lambda_handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     user_id: str = event["requestContext"]["authorizer"]["claims"]["sub"]
     logger.info("Upload URL request from userId=%s", user_id)
 

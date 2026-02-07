@@ -29,6 +29,7 @@ OUTPUT_BUCKET_NAME: str = _env("OUTPUT_BUCKET_NAME")
 
 # ---- Cognito ----
 COGNITO_USER_POOL_ID: str = _env("COGNITO_USER_POOL_ID")
+COGNITO_APP_CLIENT_ID: str = _env("COGNITO_APP_CLIENT_ID")
 
 # ---- SQS ----
 DLQ_URL: str = _env("DLQ_URL")

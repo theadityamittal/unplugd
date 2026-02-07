@@ -34,6 +34,7 @@ os.environ["UPLOAD_BUCKET_NAME"] = "unplugd-test-uploads-123456789012"
 os.environ["OUTPUT_BUCKET_NAME"] = "unplugd-test-output-123456789012"
 os.environ["STATE_MACHINE_ARN"] = ""
 os.environ["WEBSOCKET_API_ENDPOINT"] = "https://test123.execute-api.us-east-1.amazonaws.com/test"
+os.environ["COGNITO_APP_CLIENT_ID"] = ""
 
 
 @pytest.fixture()
