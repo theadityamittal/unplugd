@@ -80,6 +80,7 @@ unplugd/
 ├── tests/                     # 78 unit tests across 15 files
 ├── docs/
 │   └── PROJECT.md             # Full spec (API, schemas, formats, costs)
+│   └── PROJECT_PLAN.md        # Implementation roadmap with phase details and status
 └── _reference/                # Legacy U-Net codebase (archived)
 ```
 
