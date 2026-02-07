@@ -241,9 +241,29 @@ Resources:
         WsDisconnectFunctionArn: !GetAtt WsDisconnectFunction.Arn
         WsDefaultFunctionArn: !GetAtt WsDefaultFunction.Arn
 
-  # Phase 4: ECR repo, ECS Cluster, Demucs task definition
+  # ---- Phase 4: VPC + ECS/Fargate ----
+
+  VpcStack:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: ./templates/vpc.yaml
+      Parameters:
+        Environment: !Ref Environment
+        AppName: !Ref AppName
+
+  EcsStack:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: ./templates/ecs.yaml
+      Parameters:
+        Environment: !Ref Environment
+        AppName: !Ref AppName
+        UploadBucketName: !Sub "${AppName}-${Environment}-uploads-${AWS::AccountId}"
+        OutputBucketName: !GetAtt StorageStack.Outputs.OutputBucketName
+        SendProgressFunctionArn: !GetAtt SendProgressFunction.Arn
+
   # Phase 5: Whisper ECR repo, task definition
-  # Phase 6: Step Functions state machine, VPC, Lambda functions
+  # Phase 6: Step Functions state machine, Lambda functions
   # Phase 7: Song library API routes
   # Phase 9: CloudWatch dashboard, alarms
 
@@ -295,3 +315,19 @@ Outputs:
     Value: !GetAtt WebSocketStack.Outputs.WebSocketApiEndpoint
   SendProgressFunctionArn:
     Value: !GetAtt SendProgressFunction.Arn
+
+  # VPC
+  VpcId:
+    Value: !GetAtt VpcStack.Outputs.VpcId
+  PublicSubnetIds:
+    Value: !GetAtt VpcStack.Outputs.PublicSubnetIds
+  FargateSecurityGroupId:
+    Value: !GetAtt VpcStack.Outputs.FargateSecurityGroupId
+
+  # ECS
+  DemucsRepositoryUri:
+    Value: !GetAtt EcsStack.Outputs.DemucsRepositoryUri
+  EcsClusterArn:
+    Value: !GetAtt EcsStack.Outputs.EcsClusterArn
+  DemucsTaskDefinitionArn:
+    Value: !GetAtt EcsStack.Outputs.DemucsTaskDefinitionArn

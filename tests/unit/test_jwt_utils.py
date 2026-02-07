@@ -36,10 +36,14 @@ def test_expired_token_rejected(cognito_jwt_keys: CognitoJwtKeys) -> None:
 
 def test_invalid_signature_rejected(cognito_jwt_keys: CognitoJwtKeys) -> None:
     """Tokens signed with a different key are rejected."""
-    # Tamper with the token by changing the last character of the signature
+    # Tamper in the middle of the signature (not the end, where base64url
+    # padding bits may be ignored, causing identical decoded bytes)
     token = cognito_jwt_keys.sign_token()
     parts = token.rsplit(".", 1)
-    tampered_sig = parts[1][:-1] + ("A" if parts[1][-1] != "A" else "B")
+    sig = parts[1]
+    mid = len(sig) // 2
+    tampered_char = "A" if sig[mid] != "A" else "B"
+    tampered_sig = sig[:mid] + tampered_char + sig[mid + 1 :]
     tampered_token = parts[0] + "." + tampered_sig
 
     claims = validate_cognito_token(tampered_token)
