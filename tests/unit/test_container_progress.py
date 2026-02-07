@@ -67,7 +67,7 @@ class TestSendProgress:
         with caplog.at_level(logging.WARNING):
             send_progress(stage="demucs", progress=50, message="test")
 
-        assert "Failed to send progress event" in caplog.text
+        assert "Failed to send PROGRESS event" in caplog.text
 
     def test_send_failure_sends_failed_type(self, mock_lambda_client: MagicMock) -> None:
         """send_failure() should send a FAILED message type."""

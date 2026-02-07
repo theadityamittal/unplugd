@@ -5,13 +5,15 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from shared.constants import CORS_ORIGIN
+
 
 def _response(status_code: int, body: dict[str, Any]) -> dict[str, Any]:
     return {
         "statusCode": status_code,
         "headers": {
             "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Origin": CORS_ORIGIN,
             "Access-Control-Allow-Headers": "Content-Type,Authorization",
             "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
         },

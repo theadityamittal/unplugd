@@ -46,4 +46,4 @@ def _invoke(msg_type: str, stage: str, progress: int, message: str) -> None:
             Payload=json.dumps(payload),
         )
     except Exception:
-        logger.warning("Failed to send progress event", exc_info=True)
+        logger.warning("Failed to send %s event for song=%s", msg_type, song_id, exc_info=True)

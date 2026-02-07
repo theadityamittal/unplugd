@@ -64,6 +64,13 @@ PRESIGNED_URL_EXPIRATION: int = 900  # 15 minutes
 # ---- WebSocket Connection TTL ----
 CONNECTION_TTL_SECONDS: int = 7200  # 2 hours
 
+# ---- CORS ----
+CORS_ORIGIN: str = _env("CORS_ORIGIN", "*")
+
+# ---- WebSocket Actions ----
+WS_ACTION_PING: str = "ping"
+WS_ACTION_PONG: str = "pong"
+
 # ---- S3 Key Patterns ----
 UPLOAD_KEY_PREFIX: str = "uploads"
 OUTPUT_KEY_PREFIX: str = "output"

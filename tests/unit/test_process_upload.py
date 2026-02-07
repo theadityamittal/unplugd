@@ -5,8 +5,11 @@ from __future__ import annotations
 import io
 import struct
 from typing import Any
+from unittest.mock import patch
 
 import boto3
+import pytest
+from botocore.exceptions import ClientError
 from shared.constants import MAX_DURATION_SECONDS, MAX_FILE_SIZE_BYTES
 
 
@@ -170,6 +173,32 @@ def test_corrupt_file_with_known_extension(
     assert item["status"] == "FAILED"
     err = item["errorMessage"].lower()
     assert "unrecognized" in err or "unsupported" in err
+
+
+def test_transient_error_reraises(
+    dynamodb_tables: dict[str, Any], s3_buckets: dict[str, Any]
+) -> None:
+    """Transient AWS errors should re-raise (not mark FAILED), allowing DLQ retry."""
+    user_id = "user-123"
+    song_id = "song-abc"
+    key = f"uploads/{user_id}/{song_id}/test.wav"
+    bucket = s3_buckets["upload"]
+
+    _setup_song(dynamodb_tables, user_id, song_id)
+
+    event = _make_s3_event(bucket, key, size=1024)
+
+    from functions.process_upload.handler import lambda_handler
+
+    error = ClientError({"Error": {"Code": "InternalError", "Message": "S3 down"}}, "GetObject")
+    with patch("functions.process_upload.handler._s3") as mock_s3:
+        mock_s3.download_file.side_effect = error
+        with pytest.raises(ClientError):
+            lambda_handler(event, None)
+
+    # Song should NOT be marked FAILED — still PENDING_UPLOAD
+    result = dynamodb_tables["songs_table"].get_item(Key={"userId": user_id, "songId": song_id})
+    assert result["Item"]["status"] == "PENDING_UPLOAD"
 
 
 def test_duration_too_long(dynamodb_tables: dict[str, Any], s3_buckets: dict[str, Any]) -> None:

@@ -250,3 +250,13 @@ class TestMain:
         for c in upload_calls:
             assert c[0][1] == "test-output-bucket"
             assert c[0][2].startswith("output/user-abc/song-xyz/")
+
+    def test_main_missing_env_var_raises(self) -> None:
+        """main() should raise RuntimeError when required env vars are missing."""
+        from containers.demucs.entrypoint import main
+
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            pytest.raises(RuntimeError, match="UPLOAD_BUCKET"),
+        ):
+            main()

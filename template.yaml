@@ -18,6 +18,11 @@ Parameters:
     Default: unplugd
     Description: Application name used for resource naming
 
+  CorsOrigin:
+    Type: String
+    Default: "*"
+    Description: Allowed CORS origin (restrict in production)
+
 Globals:
   Function:
     Runtime: python3.12
@@ -36,6 +41,7 @@ Globals:
         COGNITO_USER_POOL_ID: !GetAtt AuthStack.Outputs.UserPoolId
         COGNITO_APP_CLIENT_ID: !GetAtt AuthStack.Outputs.UserPoolClientId
         DLQ_URL: !GetAtt MonitoringStack.Outputs.DeadLetterQueueUrl
+        CORS_ORIGIN: !Ref CorsOrigin
 
 Resources:
   # ---- S3 Upload Bucket (root-level for SAM S3 event source) ----
@@ -66,7 +72,7 @@ Resources:
             AllowedMethods:
               - PUT
             AllowedOrigins:
-              - "*"
+              - !Ref CorsOrigin
             MaxAge: 3600
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
@@ -177,6 +183,7 @@ Resources:
         AppName: !Ref AppName
         CognitoUserPoolArn: !GetAtt AuthStack.Outputs.UserPoolArn
         UploadRequestFunctionArn: !GetAtt UploadRequestFunction.Arn
+        CorsOrigin: !Ref CorsOrigin
 
   # ---- Phase 3: WebSocket Lambda Functions ----
 

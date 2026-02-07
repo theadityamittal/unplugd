@@ -47,9 +47,13 @@ def lambda_handler(event: dict[str, Any], _context: Any) -> None:
 
     for conn in connections:
         connection_id = conn["connectionId"]
-        success = send_to_connection(connection_id, message)
-        if not success:
-            logger.info("Removing stale connection: connectionId=%s", connection_id)
+        try:
+            delivered = send_to_connection(connection_id, message)
+            if not delivered:
+                logger.info("Removing stale connection: connectionId=%s", connection_id)
+                delete_connection(connection_id)
+        except Exception:
+            logger.exception("Error sending to connectionId=%s — removing", connection_id)
             delete_connection(connection_id)
 
     logger.info("Progress sent to %d connections for userId=%s", len(connections), user_id)
