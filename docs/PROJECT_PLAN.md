@@ -28,6 +28,7 @@ Reassessment after Phases 0-4 established these foundational choices:
 | 5 | Whisper Container (Fargate) | **Done** |
 | 6 | Step Functions Orchestration | **Done** |
 | 7 | Song Library API | **Done** |
+| 7.5 | E2E Testing & Fixes | In Progress |
 | 8 | Web Frontend (React/Next.js) | Pending |
 | 9 | CI/CD | Pending |
 | 10 | SageMaker Training Pipeline | Pending |
@@ -450,18 +451,23 @@ On error: MarkFailed (DDB + S3 cleanup + notify) → Failed
 
 ---
 
-## Phase 7: Song Library API
+## Phase 7.5: E2E Testing & Fixes (In Progress)
 
-**Goal**: CRUD endpoints for the user's song library.
+**Goal**: Manual end-to-end testing of the deployed stack, fixing issues discovered along the way.
 
-**Files**:
-- `functions/list_songs/handler.py` — `GET /songs` (optional `?status=` filter)
-- `functions/get_song/handler.py` — `GET /songs/{songId}` (details + presigned/CloudFront URLs for stems + lyrics)
-- `functions/delete_song/handler.py` — `DELETE /songs/{songId}` (remove DDB record + S3 stems + lyrics)
-- `functions/get_presets/handler.py` — `GET /presets` (static mixing presets)
-- Add routes to `templates/api.yaml`
+**Fixes applied**:
+- **ASL LaunchType conflict**: Removed `"LaunchType": "FARGATE"` from RunDemucs and RunWhisper states in `statemachines/processing.asl.json` — ECS rejects requests that specify both `LaunchType` and `CapacityProviderStrategy` simultaneously. FARGATE_SPOT via CapacityProviderStrategy is sufficient.
 
-**Existing utilities to reuse**: `dynamodb_utils.py` (song CRUD), `s3_utils.py` (presigned URLs, delete), `response.py` (API responses), `error_handling.py` (`@handle_errors` decorator).
+**Issues found**:
+- **Stale errorMessage on success**: `completion/handler.py` sets `status: COMPLETED` but doesn't clear `errorMessage` from a prior failed run. GET /songs/{songId} returns the stale error. Fix: add `remove_attrs` support to `update_song()` and pass `remove_attrs=["errorMessage"]` in completion handler.
+- **No backpressure on SFN starts**: `process_upload` calls `sfn.start_execution()` directly — burst uploads could exhaust Fargate vCPU quota or hit SFN throttling.
+
+**Planned**:
+- **SQS backpressure queue**: `process_upload → SQS → start_execution Lambda → Step Functions`. New processing queue in `monitoring.yaml` (SSE, 1-day retention, redrive to existing DLQ). New `start_execution` consumer Lambda with `ReservedConcurrentExecutions: 5` (tunable parallelism knob). `process_upload` switches from `sfn.start_execution()` to `sqs.send_message()`.
+- **Fix stale errorMessage**: Add `remove_attrs` parameter to `dynamodb_utils.update_song()`. Completion handler passes `remove_attrs=["errorMessage"]` to clear leftover error fields on success.
+- **Retry endpoint** (`POST /songs/{songId}/retry`) — reprocess a FAILED song without re-uploading
+- **Powertools logging migration**: Migrate remaining Lambdas from `logging.getLogger()` to `aws_lambda_powertools.Logger` with `@inject_lambda_context`. Currently only `process_upload`, `completion`, `cleanup`, `notify`, `failure_handler` use powertools. Remaining: `upload_request`, `get_song`, `list_songs`, `delete_song`, `get_presets`, `ws_connect`, `ws_disconnect`, `ws_default`, `send_progress`. Adds structured JSON logging, correlation IDs, and cold start tracking across all handlers.
+- Additional issues TBD from continued manual testing
 
 ---
 

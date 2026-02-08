@@ -19,7 +19,6 @@
       "Type": "Task",
       "Resource": "arn:aws:states:::ecs:runTask.sync",
       "Parameters": {
-        "LaunchType": "FARGATE",
         "Cluster": "${EcsClusterArn}",
         "TaskDefinition": "${DemucsTaskDefinitionArn}",
         "NetworkConfiguration": {
@@ -79,7 +78,6 @@
       "Type": "Task",
       "Resource": "arn:aws:states:::ecs:runTask.sync",
       "Parameters": {
-        "LaunchType": "FARGATE",
         "Cluster": "${EcsClusterArn}",
         "TaskDefinition": "${WhisperTaskDefinitionArn}",
         "NetworkConfiguration": {
