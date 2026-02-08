@@ -27,7 +27,7 @@ Reassessment after Phases 0-4 established these foundational choices:
 | 4.5 | Code Audit Refactoring | **Done** |
 | 5 | Whisper Container (Fargate) | **Done** |
 | 6 | Step Functions Orchestration | Pending |
-| 7 | Song Library API | Pending |
+| 7 | Song Library API | **Done** |
 | 8 | Web Frontend (React/Next.js) | Pending |
 | 9 | CI/CD | Pending |
 | 10 | SageMaker Training Pipeline | Pending |
@@ -52,7 +52,7 @@ Phase 1 (storage + auth)                  DONE
                             +------------+------------+
                             |                         |
                             v                         v
-                    Phase 5 (Whisper)  DONE   Phase 7 (Song Library API)
+                    Phase 5 (Whisper)  DONE   Phase 7 (Song Library API)  DONE
                             |                         |
                             v                         |
                     Phase 6 (Step Functions) <--------+
@@ -365,6 +365,42 @@ docker build --provenance=false --platform linux/amd64 \
 - **Module-level import with `None` fallback** — faster-whisper is not a dev dependency, so `WhisperModel` is set to `None` at import time when not installed. Tests patch it at `containers.whisper.entrypoint.WhisperModel`. This differs from Demucs (which uses subprocess, no import to mock).
 - **Docker tag collision gotcha** — If a stale ECR tag exists locally (e.g. from a typo like `whisperatest`), `docker tag` is a no-op when both tags share the same image ID, and `docker push` may push to the wrong repo. Fix: `docker rmi` the stale tag first, then re-tag and push.
 - **`samconfig.toml` default deploy** — Added `[default.deploy.parameters]` mirroring `[dev.deploy.parameters]` so `sam deploy` (no flags) defaults to dev. `config_env` is not a valid config key — must duplicate the parameters.
+
+---
+
+## Phase 7: Song Library API (DONE)
+
+**Goal**: CRUD endpoints for the user's song library + mixing presets.
+
+**Endpoints** (4 new routes in `templates/api.yaml`, all Cognito-authorized):
+
+| Method | Path | Handler | Description |
+|--------|------|---------|-------------|
+| `GET` | `/songs` | `list_songs/handler.py` | List user's songs (optional `?status=` filter) |
+| `GET` | `/songs/{songId}` | `get_song/handler.py` | Song details + presigned stem/lyrics URLs (if COMPLETED) |
+| `DELETE` | `/songs/{songId}` | `delete_song/handler.py` | Delete song record + S3 objects (any status) |
+| `GET` | `/presets` | `get_presets/handler.py` | 5 mixing presets (Balanced, Karaoke, Drum/Bass Practice, Vocals Only) |
+
+**Files created**:
+- `functions/list_songs/handler.py` — queries DynamoDB by user, optional status filter with validation
+- `functions/get_song/handler.py` — single song lookup, attaches presigned S3 URLs for COMPLETED songs
+- `functions/delete_song/handler.py` — deletes DDB record + S3 objects (output stems/lyrics + upload)
+- `functions/get_presets/handler.py` — returns static `MIXING_PRESETS` from constants
+- `functions/shared/constants.py` — added `MIXING_PRESETS` (5 presets with `volumes` dict)
+- `templates/api.yaml` — 4 new parameters, 4 routes, 4 Lambda permissions
+- `template.yaml` — 4 new Lambda functions, updated ApiStack parameters
+- `tests/unit/test_list_songs.py` (5 tests), `test_get_song.py` (5 tests), `test_delete_song.py` (4 tests), `test_get_presets.py` (2 tests)
+
+**Architecture decisions**:
+- All handlers reuse existing shared utilities — no new shared modules needed
+- Presigned S3 URLs (not CloudFront) for stem/lyrics delivery — CloudFront deferred to Phase 12
+- DELETE allows any status — Step Functions handles graceful failure if song is mid-processing
+- Presets use `volumes` dict (`{drums: 1.0, bass: 0.0, ...}`) for Web Audio API gain control compatibility
+- TDD approach: tests written first, then handlers, then infrastructure
+
+**Tests**: 108 total (16 new + 92 existing)
+
+**Verification**: `ruff check` + `ruff format` + `pytest` (108 passed) + `sam validate --lint` all passing
 
 ---
 

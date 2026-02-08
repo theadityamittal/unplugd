@@ -77,3 +77,37 @@ OUTPUT_KEY_PREFIX: str = "output"
 
 # ---- Stems ----
 STEM_NAMES: tuple[str, ...] = ("drums", "bass", "other", "vocals")
+
+# ---- Mixing Presets ----
+MIXING_PRESETS: list[dict[str, object]] = [
+    {
+        "id": "balanced",
+        "name": "Balanced",
+        "description": "Full mix — all stems at equal volume",
+        "volumes": {"drums": 1.0, "bass": 1.0, "other": 1.0, "vocals": 1.0},
+    },
+    {
+        "id": "karaoke",
+        "name": "Karaoke",
+        "description": "Vocals muted — instrumental only",
+        "volumes": {"drums": 1.0, "bass": 1.0, "other": 1.0, "vocals": 0.0},
+    },
+    {
+        "id": "drum_practice",
+        "name": "Drum Practice",
+        "description": "Drums muted — play along on drums",
+        "volumes": {"drums": 0.0, "bass": 1.0, "other": 1.0, "vocals": 1.0},
+    },
+    {
+        "id": "bass_practice",
+        "name": "Bass Practice",
+        "description": "Bass muted — play along on bass",
+        "volumes": {"drums": 1.0, "bass": 0.0, "other": 1.0, "vocals": 1.0},
+    },
+    {
+        "id": "vocals_only",
+        "name": "Vocals Only",
+        "description": "Isolated vocal track",
+        "volumes": {"drums": 0.0, "bass": 0.0, "other": 0.0, "vocals": 1.0},
+    },
+]

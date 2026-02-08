@@ -13,6 +13,14 @@ Parameters:
     Type: String
   CorsOrigin:
     Type: String
+  ListSongsFunctionArn:
+    Type: String
+  GetSongFunctionArn:
+    Type: String
+  DeleteSongFunctionArn:
+    Type: String
+  GetPresetsFunctionArn:
+    Type: String
 
 Resources:
   RestApi:
@@ -47,6 +55,49 @@ Resources:
               responses:
                 "201":
                   description: "Upload URL created"
+          /songs:
+            get:
+              x-amazon-apigateway-integration:
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ListSongsFunctionArn}/invocations"
+                httpMethod: POST
+                type: aws_proxy
+              security:
+                - CognitoAuthorizer: []
+              responses:
+                "200":
+                  description: "Song list"
+          /songs/{songId}:
+            get:
+              x-amazon-apigateway-integration:
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetSongFunctionArn}/invocations"
+                httpMethod: POST
+                type: aws_proxy
+              security:
+                - CognitoAuthorizer: []
+              responses:
+                "200":
+                  description: "Song detail"
+            delete:
+              x-amazon-apigateway-integration:
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DeleteSongFunctionArn}/invocations"
+                httpMethod: POST
+                type: aws_proxy
+              security:
+                - CognitoAuthorizer: []
+              responses:
+                "200":
+                  description: "Song deleted"
+          /presets:
+            get:
+              x-amazon-apigateway-integration:
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetPresetsFunctionArn}/invocations"
+                httpMethod: POST
+                type: aws_proxy
+              security:
+                - CognitoAuthorizer: []
+              responses:
+                "200":
+                  description: "Preset list"
         securityDefinitions:
           CognitoAuthorizer:
             type: apiKey
@@ -62,6 +113,38 @@ Resources:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !Ref UploadRequestFunctionArn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*"
+
+  ListSongsInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ListSongsFunctionArn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*"
+
+  GetSongInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetSongFunctionArn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*"
+
+  DeleteSongInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DeleteSongFunctionArn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*"
+
+  GetPresetsInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetPresetsFunctionArn
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*"

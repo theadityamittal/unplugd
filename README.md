@@ -77,7 +77,7 @@ unplugd/
 │   └── whisper/               # Lyrics extraction
 ├── layers/common/             # Lambda layer (symlink → functions/shared)
 ├── statemachines/             # Step Functions ASL definitions
-├── tests/                     # 92 unit tests across 16 files
+├── tests/                     # 108 unit tests across 20 files
 ├── docs/
 │   └── PROJECT.md             # Full spec (API, schemas, formats, costs)
 │   └── PROJECT_PLAN.md        # Implementation roadmap with phase details and status
@@ -138,15 +138,15 @@ docker build --provenance=false --platform linux/amd64 \
 
 ## Current Status
 
-**Phases 0-5 complete** — 92 unit tests passing.
+**Phases 0-7 complete** — 108 unit tests passing.
 
 | Phase | Description | Status |
 |-------|-------------|--------|
 | 0-4 | Scaffold, Storage/Auth, Upload API, WebSocket, Demucs Container | **Done** |
 | 4.5 | Code audit refactoring | **Done** |
 | 5 | Whisper Container (lyrics) | **Done** |
+| 7 | Song Library API | **Done** |
 | 6 | Step Functions Orchestration | Pending |
-| 7 | Song Library API | Pending |
 | 8 | Web Frontend (React/Next.js) | Pending |
 | 9-12 | CI/CD, SageMaker ML, Model Integration, Hardening | Pending |
 

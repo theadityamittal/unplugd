@@ -184,6 +184,10 @@ Resources:
         CognitoUserPoolArn: !GetAtt AuthStack.Outputs.UserPoolArn
         UploadRequestFunctionArn: !GetAtt UploadRequestFunction.Arn
         CorsOrigin: !Ref CorsOrigin
+        ListSongsFunctionArn: !GetAtt ListSongsFunction.Arn
+        GetSongFunctionArn: !GetAtt GetSongFunction.Arn
+        DeleteSongFunctionArn: !GetAtt DeleteSongFunction.Arn
+        GetPresetsFunctionArn: !GetAtt GetPresetsFunction.Arn
 
   # ---- Phase 3: WebSocket Lambda Functions ----
 
@@ -274,8 +278,60 @@ Resources:
         OutputBucketName: !GetAtt StorageStack.Outputs.OutputBucketName
         SendProgressFunctionArn: !GetAtt SendProgressFunction.Arn
 
+  # ---- Phase 7: Song Library API Functions ----
+
+  ListSongsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-list-songs"
+      Handler: list_songs/handler.lambda_handler
+      CodeUri: functions/
+      Layers:
+        - !Ref CommonLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !GetAtt StorageStack.Outputs.SongsTableName
+
+  GetSongFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-get-song"
+      Handler: get_song/handler.lambda_handler
+      CodeUri: functions/
+      Layers:
+        - !Ref CommonLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !GetAtt StorageStack.Outputs.SongsTableName
+        - S3ReadPolicy:
+            BucketName: !GetAtt StorageStack.Outputs.OutputBucketName
+
+  DeleteSongFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-delete-song"
+      Handler: delete_song/handler.lambda_handler
+      CodeUri: functions/
+      Layers:
+        - !Ref CommonLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !GetAtt StorageStack.Outputs.SongsTableName
+        - S3CrudPolicy:
+            BucketName: !GetAtt StorageStack.Outputs.OutputBucketName
+        - S3CrudPolicy:
+            BucketName: !Sub "${AppName}-${Environment}-uploads-${AWS::AccountId}"
+
+  GetPresetsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-get-presets"
+      Handler: get_presets/handler.lambda_handler
+      CodeUri: functions/
+      Layers:
+        - !Ref CommonLayer
+
   # Phase 6: Step Functions state machine, Lambda functions
-  # Phase 7: Song library API routes
   # Phase 9: CloudWatch dashboard, alarms
 
 Outputs:
