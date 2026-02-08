@@ -274,7 +274,6 @@ Resources:
         OutputBucketName: !GetAtt StorageStack.Outputs.OutputBucketName
         SendProgressFunctionArn: !GetAtt SendProgressFunction.Arn
 
-  # Phase 5: Whisper ECR repo, task definition
   # Phase 6: Step Functions state machine, Lambda functions
   # Phase 7: Song library API routes
   # Phase 9: CloudWatch dashboard, alarms
@@ -343,3 +342,7 @@ Outputs:
     Value: !GetAtt EcsStack.Outputs.EcsClusterArn
   DemucsTaskDefinitionArn:
     Value: !GetAtt EcsStack.Outputs.DemucsTaskDefinitionArn
+  WhisperRepositoryUri:
+    Value: !GetAtt EcsStack.Outputs.WhisperRepositoryUri
+  WhisperTaskDefinitionArn:
+    Value: !GetAtt EcsStack.Outputs.WhisperTaskDefinitionArn

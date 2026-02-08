@@ -77,7 +77,7 @@ unplugd/
 │   └── whisper/               # Lyrics extraction
 ├── layers/common/             # Lambda layer (symlink → functions/shared)
 ├── statemachines/             # Step Functions ASL definitions
-├── tests/                     # 78 unit tests across 15 files
+├── tests/                     # 92 unit tests across 16 files
 ├── docs/
 │   └── PROJECT.md             # Full spec (API, schemas, formats, costs)
 │   └── PROJECT_PLAN.md        # Implementation roadmap with phase details and status
@@ -114,7 +114,7 @@ sam deploy --config-env prod
 ## Development
 
 ```bash
-# Run unit tests (78 tests)
+# Run unit tests (92 tests)
 uv run pytest tests/unit/ -v
 
 # Lint
@@ -132,17 +132,19 @@ sam local invoke UploadRequestFunction -e events/upload_request.json
 # Build Fargate containers
 docker build --provenance=false --platform linux/amd64 \
   -f containers/demucs/Dockerfile -t unplugd-demucs .
+docker build --provenance=false --platform linux/amd64 \
+  -f containers/whisper/Dockerfile -t unplugd-whisper .
 ```
 
 ## Current Status
 
-**Phases 0-4 complete** — 78 unit tests passing.
+**Phases 0-5 complete** — 92 unit tests passing.
 
 | Phase | Description | Status |
 |-------|-------------|--------|
 | 0-4 | Scaffold, Storage/Auth, Upload API, WebSocket, Demucs Container | **Done** |
-| 4.5 | Code audit refactoring | Pending |
-| 5 | Whisper Container (lyrics) | Pending |
+| 4.5 | Code audit refactoring | **Done** |
+| 5 | Whisper Container (lyrics) | **Done** |
 | 6 | Step Functions Orchestration | Pending |
 | 7 | Song Library API | Pending |
 | 8 | Web Frontend (React/Next.js) | Pending |

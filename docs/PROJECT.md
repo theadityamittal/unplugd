@@ -97,7 +97,7 @@ Users can toggle individual stems on/off for different use cases — karaoke (vo
 | Database | DynamoDB (PAY_PER_REQUEST) |
 | Storage | S3 (uploads + output) + CloudFront CDN |
 | ML: Separation | Meta Demucs `htdemucs_ft` (Fargate, CPU) |
-| ML: Lyrics | OpenAI Whisper `base` (Fargate, CPU, word timestamps) |
+| ML: Lyrics | faster-whisper `base` (Fargate, CPU, CTranslate2 int8, word timestamps) |
 | ML: Training | AWS SageMaker (v2 — custom Band-Split RNN) |
 | IaC | SAM / CloudFormation |
 | CI/CD | GitHub Actions |
@@ -141,10 +141,11 @@ On error at any stage:
 - Reports progress via async Lambda invocation → WebSocket
 
 ### Whisper Container
-- Downloads `vocals.wav` from S3 (Demucs output)
-- Runs Whisper `base` with `word_timestamps=True`
+- Downloads `vocals.wav` from S3 (Demucs output, from OUTPUT bucket)
+- Runs faster-whisper `base` with `word_timestamps=True`, `condition_on_previous_text=False`, `vad_filter=True`
 - Outputs lyrics JSON to S3: `output/{userId}/{songId}/lyrics.json`
-- Handles instrumental tracks gracefully (empty lyrics, not an error)
+- Handles instrumental tracks gracefully (text < 10 chars → `{instrumental: true, segments: []}`)
+- Always uploads lyrics.json, even for instrumental tracks
 
 ### Progress Reporting
 Fargate containers invoke `SendProgress` Lambda asynchronously via `boto3`. Lambda looks up user's WebSocket connections in DynamoDB and pushes events via API Gateway Management API.
@@ -223,6 +224,7 @@ Fargate containers invoke `SendProgress` Lambda asynchronously via `boto3`. Lamb
 ```json
 {
   "language": "en",
+  "instrumental": false,
   "segments": [
     {
       "start": 0.0,
@@ -236,10 +238,11 @@ Fargate containers invoke `SendProgress` Lambda asynchronously via `boto3`. Lamb
         {"word": "friend", "start": 2.0, "end": 2.8}
       ]
     }
-  ],
-  "fullText": "Hello darkness my old friend..."
+  ]
 }
 ```
+
+For instrumental tracks: `{"language": null, "instrumental": true, "segments": []}`
 
 ---
 
@@ -305,7 +308,7 @@ unplugd/
 │
 ├── tests/                            # Unit + integration tests
 │   ├── conftest.py                  # Shared fixtures (moto mocks, JWT keys, env vars)
-│   ├── unit/                        # Unit tests (78 tests across 15 files)
+│   ├── unit/                        # Unit tests (92 tests across 16 files)
 │   │   ├── test_constants.py
 │   │   ├── test_dynamodb_utils.py
 │   │   ├── test_error_handling.py
