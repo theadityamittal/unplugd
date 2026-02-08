@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
-Description: "Unplugd — ECS Fargate cluster, ECR repository, Demucs task definition"
+Description: "Unplugd — ECS Fargate cluster, ECR repositories, Demucs + Whisper task definitions"
 
 Parameters:
   Environment:
@@ -163,6 +163,113 @@ Resources:
         - Key: Application
           Value: !Ref AppName
 
+  # ---- Whisper ECR Repository ----
+  WhisperRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${AppName}-${Environment}-whisper"
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep only 5 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 5
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: !Ref AppName
+
+  # ---- IAM: Whisper Task Role (S3 read/write on output bucket + Lambda invoke) ----
+  WhisperTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AppName}-${Environment}-whisper-task"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: WhisperTaskPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub "arn:aws:s3:::${OutputBucketName}/output/*"
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${OutputBucketName}/output/*"
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: !Ref SendProgressFunctionArn
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ---- Whisper CloudWatch Log Group ----
+  WhisperLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/${AppName}-${Environment}-whisper"
+      RetentionInDays: 14
+
+  # ---- Whisper Task Definition ----
+  WhisperTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${AppName}-${Environment}-whisper"
+      Cpu: "2048"
+      Memory: "8192"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      RuntimePlatform:
+        CpuArchitecture: X86_64
+        OperatingSystemFamily: LINUX
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt WhisperTaskRole.Arn
+      ContainerDefinitions:
+        - Name: whisper
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${WhisperRepository}:latest"
+          Essential: true
+          Environment:
+            - Name: OUTPUT_BUCKET
+              Value: !Ref OutputBucketName
+            - Name: SEND_PROGRESS_FUNCTION_ARN
+              Value: !Ref SendProgressFunctionArn
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref WhisperLogGroup
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: whisper
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: !Ref AppName
+
 Outputs:
   DemucsRepositoryUri:
     Value: !GetAtt DemucsRepository.RepositoryUri
@@ -170,3 +277,7 @@ Outputs:
     Value: !GetAtt EcsCluster.Arn
   DemucsTaskDefinitionArn:
     Value: !Ref DemucsTaskDefinition
+  WhisperRepositoryUri:
+    Value: !GetAtt WhisperRepository.RepositoryUri
+  WhisperTaskDefinitionArn:
+    Value: !Ref WhisperTaskDefinition

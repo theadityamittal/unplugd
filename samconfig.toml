@@ -3,6 +3,13 @@ version = 0.1
 [default.global.parameters]
 region = "us-east-1"
 
+[default.deploy.parameters]
+stack_name = "unplugd-dev"
+capabilities = "CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND"
+resolve_s3 = true
+parameter_overrides = "Environment=dev"
+confirm_changeset = false
+
 [default.build.parameters]
 cached = true
 parallel = true

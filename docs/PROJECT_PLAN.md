@@ -24,8 +24,8 @@ Reassessment after Phases 0-4 established these foundational choices:
 | 2 | Upload API | **Done** |
 | 3 | WebSocket API | **Done** |
 | 4 | Demucs Container (Fargate) | **Done** |
-| 4.5 | Code Audit Refactoring | Pending |
-| 5 | Whisper Container (Fargate) | Pending |
+| 4.5 | Code Audit Refactoring | **Done** |
+| 5 | Whisper Container (Fargate) | **Done** |
 | 6 | Step Functions Orchestration | Pending |
 | 7 | Song Library API | Pending |
 | 8 | Web Frontend (React/Next.js) | Pending |
@@ -47,12 +47,12 @@ Phase 1 (storage + auth)                  DONE
   +---> Phase 4 (Demucs)              --+  DONE
                                          |
                                          v
-                                 Phase 4.5 (refactoring)
+                                 Phase 4.5 (refactoring)  DONE
                                          |
                             +------------+------------+
                             |                         |
                             v                         v
-                    Phase 5 (Whisper)         Phase 7 (Song Library API)
+                    Phase 5 (Whisper)  DONE   Phase 7 (Song Library API)
                             |                         |
                             v                         |
                     Phase 6 (Step Functions) <--------+
@@ -263,7 +263,7 @@ templates/
 
 ---
 
-## Phase 4.5: Code Audit Refactoring
+## Phase 4.5: Code Audit Refactoring (DONE)
 
 **Goal**: Address 8 findings from code audit before building new features.
 
@@ -296,21 +296,75 @@ Wrap `send_to_connection()` call in try/except in `functions/send_progress/handl
 - `test_send_progress.py` — verify exception in send_to_connection triggers cleanup
 - `test_entrypoint_demucs.py` — verify missing env var raises RuntimeError
 
+**Tests**: 81 total (3 new + 78 existing)
+
+**Files changed**: 13 files (10 source + 3 test), 112 insertions, 11 deletions
+
+**Verification**: `ruff check` + `pytest` (81 passed) all passing
+
 ---
 
-## Phase 5: Whisper Container (Fargate)
+## Phase 5: Whisper Container (Fargate) (DONE)
 
-**Goal**: Docker container that extracts word-level synced lyrics.
+**Goal**: Docker container that extracts word-level synced lyrics for karaoke UX.
 
 **Files**:
-- `containers/whisper/Dockerfile` — Python 3.12 + OpenAI Whisper `base` + PyTorch CPU + ffmpeg
-- `containers/whisper/entrypoint.py` — S3 download vocals.wav → Whisper `base` with `word_timestamps=True` → upload lyrics JSON to S3
-- `templates/ecs.yaml` — add WhisperTaskDefinition (2 vCPU / 8 GB), WhisperEcrRepository
-- `tests/unit/test_whisper_entrypoint.py`
+- `containers/whisper/Dockerfile` — Python 3.12-slim + faster-whisper (CTranslate2) + ffmpeg, model pre-downloaded
+- `containers/whisper/entrypoint.py` — S3 download vocals.wav → faster-whisper `base` with `word_timestamps=True` → upload lyrics.json to S3
+- `templates/ecs.yaml` — WhisperRepository (ECR), WhisperTaskRole, WhisperLogGroup, WhisperTaskDefinition (2 vCPU / 8 GB)
+- `template.yaml` — WhisperRepositoryUri + WhisperTaskDefinitionArn outputs
+- `tests/unit/test_entrypoint_whisper.py` (11 tests)
 
 **Output**: `output/{userId}/{songId}/lyrics.json`
 
-**Architecture**: Same pattern as Demucs container. Downloads vocals.wav (Demucs output), runs Whisper, uploads JSON. Reports progress via SendProgress Lambda. Handles instrumental tracks gracefully (empty lyrics, not an error).
+**Architecture decisions**:
+- **faster-whisper** (not openai-whisper) — 4x faster on CPU via CTranslate2, int8 quantization, identical word timestamps. No PyTorch dependency → much smaller Docker image
+- Same pattern as Demucs: download → process → upload, with progress milestones (5%, 15%, 85%, 100%)
+- Input: `vocals.wav` from OUTPUT_BUCKET (Demucs output), not UPLOAD_BUCKET
+- Instrumental detection: if total text < 10 chars → `{instrumental: true, segments: []}` (prevents hallucination on instrumental tracks)
+- Always uploads lyrics.json, even for instrumental tracks (simpler for frontend — file always exists)
+- `condition_on_previous_text=False` + `vad_filter=True` to prevent Whisper hallucination
+- Module-level `WhisperModel` import with `None` fallback for tests (faster-whisper not a dev dependency)
+
+**Lyrics JSON schema**:
+```json
+{
+  "language": "en",
+  "instrumental": false,
+  "segments": [
+    {
+      "start": 0.0, "end": 3.5, "text": "Hello world",
+      "words": [
+        {"word": "Hello", "start": 0.0, "end": 0.5},
+        {"word": "world", "start": 0.6, "end": 1.0}
+      ]
+    }
+  ]
+}
+```
+
+**Docker build**:
+```bash
+docker build --provenance=false --platform linux/amd64 \
+  -f containers/whisper/Dockerfile -t unplugd-whisper .
+```
+
+**Tests**: 92 total (11 new + 81 existing)
+
+**Verification**: `ruff check` + `pytest` (92 passed) + `sam validate --lint` all passing
+
+**Manual verification on deployed dev stack**:
+- `sam deploy` → WhisperRepository, WhisperTaskRole, WhisperLogGroup, WhisperTaskDefinition all created
+- Docker image built and pushed to ECR (`unplugd-dev-whisper:latest`)
+- Demucs RunTask → 4 stems in S3 → Whisper RunTask → `lyrics.json` in S3 — full pipeline working
+- Lyrics JSON has correct structure: `language`, `instrumental`, `segments[].words[].{word, start, end}`
+- Progress events (5%, 15%, 85%, 100%) delivered via SendProgress Lambda
+
+**Lessons learned**:
+- **faster-whisper has no PyTorch dependency** — CTranslate2 handles inference natively. Docker image is ~2GB vs Demucs ~4GB. No need for `--index-url .../whl/cpu` trick.
+- **Module-level import with `None` fallback** — faster-whisper is not a dev dependency, so `WhisperModel` is set to `None` at import time when not installed. Tests patch it at `containers.whisper.entrypoint.WhisperModel`. This differs from Demucs (which uses subprocess, no import to mock).
+- **Docker tag collision gotcha** — If a stale ECR tag exists locally (e.g. from a typo like `whisperatest`), `docker tag` is a no-op when both tags share the same image ID, and `docker push` may push to the wrong repo. Fix: `docker rmi` the stale tag first, then re-tag and push.
+- **`samconfig.toml` default deploy** — Added `[default.deploy.parameters]` mirroring `[dev.deploy.parameters]` so `sam deploy` (no flags) defaults to dev. `config_env` is not a valid config key — must duplicate the parameters.
 
 ---
 
