@@ -20,6 +20,7 @@ dev = [
     "pre-commit>=4.0",
     "pyjwt>=2.11.0",
     "cryptography>=46.0.4",
+    "aws-lambda-powertools>=3.24.0",
 ]
 
 [tool.ruff]

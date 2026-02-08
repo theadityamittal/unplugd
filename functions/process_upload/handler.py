@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
 import tempfile
 from typing import Any
@@ -12,6 +11,7 @@ from uuid import uuid4
 
 import boto3
 import mutagen
+from aws_lambda_powertools import Logger
 from botocore.exceptions import BotoCoreError, ClientError
 from shared.constants import (
     ALLOWED_FORMATS,
@@ -23,7 +23,7 @@ from shared.constants import (
 )
 from shared.dynamodb_utils import update_song
 
-logger = logging.getLogger(__name__)
+logger = Logger(service="process_upload")
 
 _s3 = boto3.client("s3")
 

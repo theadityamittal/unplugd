@@ -26,7 +26,7 @@ Reassessment after Phases 0-4 established these foundational choices:
 | 4 | Demucs Container (Fargate) | **Done** |
 | 4.5 | Code Audit Refactoring | **Done** |
 | 5 | Whisper Container (Fargate) | **Done** |
-| 6 | Step Functions Orchestration | Pending |
+| 6 | Step Functions Orchestration | **Done** |
 | 7 | Song Library API | **Done** |
 | 8 | Web Frontend (React/Next.js) | Pending |
 | 9 | CI/CD | Pending |
@@ -55,7 +55,7 @@ Phase 1 (storage + auth)                  DONE
                     Phase 5 (Whisper)  DONE   Phase 7 (Song Library API)  DONE
                             |                         |
                             v                         |
-                    Phase 6 (Step Functions) <--------+
+                    Phase 6 (Step Functions) <--------+  DONE
                             |
                             v
                     Phase 8 (Web Frontend) -------> Tangible demo
@@ -87,7 +87,7 @@ templates/
   websocket.yaml               # WebSocket API Gateway              (Phase 3) DONE
   vpc.yaml                     # VPC, subnets, IGW, SG              (Phase 4) DONE
   ecs.yaml                     # ECR + ECS Fargate tasks            (Phase 4-5) DONE
-  orchestration.yaml           # Step Functions                     (Phase 6)
+  orchestration.yaml           # Step Functions                     (Phase 6) DONE
 ```
 
 ---
@@ -404,24 +404,36 @@ docker build --provenance=false --platform linux/amd64 \
 
 ---
 
-## Phase 6: Step Functions Orchestration
+## Phase 6: Step Functions Orchestration (DONE)
 
 **Goal**: Wire everything together into a state machine with automatic retry on failures.
 
-**Files**:
-- `statemachines/processing.asl.json` — ASL definition
+**Files created**:
+- `statemachines/processing.asl.json` — ASL definition (9 states, DefinitionSubstitutions for 10 ARNs)
 - `functions/completion/handler.py` — mark song COMPLETED in DynamoDB
 - `functions/cleanup/handler.py` — delete original upload from S3
-- `functions/notify/handler.py` — send final WebSocket notification (COMPLETED with stem/lyrics URLs)
-- `functions/failure_handler/handler.py` — mark song FAILED, send FAILED notification
-- `templates/orchestration.yaml` — StateMachine resource, IAM role
-- `functions/process_upload/handler.py` — update to start Step Functions execution (currently has STATE_MACHINE_ARN stub)
+- `functions/notify/handler.py` — send status-only WebSocket notification (frontend calls GET /songs/{songId})
+- `functions/failure_handler/handler.py` — mark song FAILED, clean up partial S3 outputs, send FAILED notification
+- `templates/orchestration.yaml` — StateMachine resource, IAM role (ECS RunTask, PassRole, Lambda Invoke, EventBridge)
+
+**Files modified**:
+- `template.yaml` — 4 new Lambda functions, OrchestrationStack nested stack, wired STATE_MACHINE_ARN, StartExecution IAM policy
+- `templates/ecs.yaml` — exported 3 IAM role ARNs (TaskExecutionRole, DemucsTaskRole, WhisperTaskRole)
+- `layers/common/requirements.txt` — added `aws-lambda-powertools>=2.0`
+- `functions/process_upload/handler.py` — switched to powertools Logger (existing SFN stub was already correct)
 
 **Flow**:
 ```
-ValidateInput → RunDemucs (15min) → RunWhisper (10min) → Completion → Cleanup → Notify → Done
-On error: MarkFailed → NotifyFailure → Failed
+ValidateInput → RunDemucs (30min timeout) → RunWhisper (15min timeout) → MarkCompleted → SendNotification → CleanupUpload → Done
+On error: MarkFailed (DDB + S3 cleanup + notify) → Failed
 ```
+
+**Design decisions**:
+- **ECS RunTask .sync**: Step Functions waits natively for Fargate task completion (no callback tokens)
+- **Status-only notifications**: Send `{type: COMPLETED, songId}` — frontend fetches details via GET /songs/{songId}
+- **Failure cleanup**: Removes partial S3 outputs on failure (user can also clean via DELETE /songs/{songId})
+- **aws-lambda-powertools**: Added to CommonLayer for structured JSON logging with correlation IDs
+- **Separate ASL file**: `statemachines/processing.asl.json` with DefinitionUri + DefinitionSubstitutions
 
 **Auto-retry** (ASL Retry blocks on RunDemucs and RunWhisper):
 - `ErrorEquals: ["States.TaskFailed"]` — catches Fargate task failures (spot interruptions, transient S3 errors)
@@ -429,7 +441,12 @@ On error: MarkFailed → NotifyFailure → Failed
 - `ErrorEquals: ["ECS.AmazonECSException"]` — catches capacity/quota errors
 - `IntervalSeconds: 60`, `BackoffRate: 2`, `MaxAttempts: 5`
 
-**Progress**: Fargate containers async-invoke `SendProgress` Lambda via boto3.
+**Tests**: 15 new tests (test_completion, test_cleanup, test_notify, test_failure_handler, test_processing_asl, test_process_upload SFN test) — **123 total**
+
+**Notes**:
+- EventBridge rule `StepFunctionsGetEventsForECSTaskRule` is auto-created by Step Functions for `.sync` integration — IAM policy must allow events:PutTargets/PutRule/DescribeRule
+- `FakeLambdaContext` fixture added to conftest.py for aws-lambda-powertools `@inject_lambda_context` compatibility in tests
+- Container names in ASL overrides (`"demucs"`, `"whisper"`) must match Name fields in ecs.yaml task definitions
 
 ---
 

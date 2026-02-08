@@ -281,3 +281,9 @@ Outputs:
     Value: !GetAtt WhisperRepository.RepositoryUri
   WhisperTaskDefinitionArn:
     Value: !Ref WhisperTaskDefinition
+  TaskExecutionRoleArn:
+    Value: !GetAtt TaskExecutionRole.Arn
+  DemucsTaskRoleArn:
+    Value: !GetAtt DemucsTaskRole.Arn
+  WhisperTaskRoleArn:
+    Value: !GetAtt WhisperTaskRole.Arn
