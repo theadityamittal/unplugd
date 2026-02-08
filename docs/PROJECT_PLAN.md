@@ -26,8 +26,9 @@ Reassessment after Phases 0-4 established these foundational choices:
 | 4 | Demucs Container (Fargate) | **Done** |
 | 4.5 | Code Audit Refactoring | **Done** |
 | 5 | Whisper Container (Fargate) | **Done** |
-| 6 | Step Functions Orchestration | Pending |
-| 7 | Song Library API | Pending |
+| 6 | Step Functions Orchestration | **Done** |
+| 7 | Song Library API | **Done** |
+| 7.5 | E2E Testing & Fixes | In Progress |
 | 8 | Web Frontend (React/Next.js) | Pending |
 | 9 | CI/CD | Pending |
 | 10 | SageMaker Training Pipeline | Pending |
@@ -52,10 +53,10 @@ Phase 1 (storage + auth)                  DONE
                             +------------+------------+
                             |                         |
                             v                         v
-                    Phase 5 (Whisper)  DONE   Phase 7 (Song Library API)
+                    Phase 5 (Whisper)  DONE   Phase 7 (Song Library API)  DONE
                             |                         |
                             v                         |
-                    Phase 6 (Step Functions) <--------+
+                    Phase 6 (Step Functions) <--------+  DONE
                             |
                             v
                     Phase 8 (Web Frontend) -------> Tangible demo
@@ -87,7 +88,7 @@ templates/
   websocket.yaml               # WebSocket API Gateway              (Phase 3) DONE
   vpc.yaml                     # VPC, subnets, IGW, SG              (Phase 4) DONE
   ecs.yaml                     # ECR + ECS Fargate tasks            (Phase 4-5) DONE
-  orchestration.yaml           # Step Functions                     (Phase 6)
+  orchestration.yaml           # Step Functions                     (Phase 6) DONE
 ```
 
 ---
@@ -368,24 +369,72 @@ docker build --provenance=false --platform linux/amd64 \
 
 ---
 
-## Phase 6: Step Functions Orchestration
+## Phase 7: Song Library API (DONE)
+
+**Goal**: CRUD endpoints for the user's song library + mixing presets.
+
+**Endpoints** (4 new routes in `templates/api.yaml`, all Cognito-authorized):
+
+| Method | Path | Handler | Description |
+|--------|------|---------|-------------|
+| `GET` | `/songs` | `list_songs/handler.py` | List user's songs (optional `?status=` filter) |
+| `GET` | `/songs/{songId}` | `get_song/handler.py` | Song details + presigned stem/lyrics URLs (if COMPLETED) |
+| `DELETE` | `/songs/{songId}` | `delete_song/handler.py` | Delete song record + S3 objects (any status) |
+| `GET` | `/presets` | `get_presets/handler.py` | 5 mixing presets (Balanced, Karaoke, Drum/Bass Practice, Vocals Only) |
+
+**Files created**:
+- `functions/list_songs/handler.py` — queries DynamoDB by user, optional status filter with validation
+- `functions/get_song/handler.py` — single song lookup, attaches presigned S3 URLs for COMPLETED songs
+- `functions/delete_song/handler.py` — deletes DDB record + S3 objects (output stems/lyrics + upload)
+- `functions/get_presets/handler.py` — returns static `MIXING_PRESETS` from constants
+- `functions/shared/constants.py` — added `MIXING_PRESETS` (5 presets with `volumes` dict)
+- `templates/api.yaml` — 4 new parameters, 4 routes, 4 Lambda permissions
+- `template.yaml` — 4 new Lambda functions, updated ApiStack parameters
+- `tests/unit/test_list_songs.py` (5 tests), `test_get_song.py` (5 tests), `test_delete_song.py` (4 tests), `test_get_presets.py` (2 tests)
+
+**Architecture decisions**:
+- All handlers reuse existing shared utilities — no new shared modules needed
+- Presigned S3 URLs (not CloudFront) for stem/lyrics delivery — CloudFront deferred to Phase 12
+- DELETE allows any status — Step Functions handles graceful failure if song is mid-processing
+- Presets use `volumes` dict (`{drums: 1.0, bass: 0.0, ...}`) for Web Audio API gain control compatibility
+- TDD approach: tests written first, then handlers, then infrastructure
+
+**Tests**: 108 total (16 new + 92 existing)
+
+**Verification**: `ruff check` + `ruff format` + `pytest` (108 passed) + `sam validate --lint` all passing
+
+---
+
+## Phase 6: Step Functions Orchestration (DONE)
 
 **Goal**: Wire everything together into a state machine with automatic retry on failures.
 
-**Files**:
-- `statemachines/processing.asl.json` — ASL definition
+**Files created**:
+- `statemachines/processing.asl.json` — ASL definition (9 states, DefinitionSubstitutions for 10 ARNs)
 - `functions/completion/handler.py` — mark song COMPLETED in DynamoDB
 - `functions/cleanup/handler.py` — delete original upload from S3
-- `functions/notify/handler.py` — send final WebSocket notification (COMPLETED with stem/lyrics URLs)
-- `functions/failure_handler/handler.py` — mark song FAILED, send FAILED notification
-- `templates/orchestration.yaml` — StateMachine resource, IAM role
-- `functions/process_upload/handler.py` — update to start Step Functions execution (currently has STATE_MACHINE_ARN stub)
+- `functions/notify/handler.py` — send status-only WebSocket notification (frontend calls GET /songs/{songId})
+- `functions/failure_handler/handler.py` — mark song FAILED, clean up partial S3 outputs, send FAILED notification
+- `templates/orchestration.yaml` — StateMachine resource, IAM role (ECS RunTask, PassRole, Lambda Invoke, EventBridge)
+
+**Files modified**:
+- `template.yaml` — 4 new Lambda functions, OrchestrationStack nested stack, wired STATE_MACHINE_ARN, StartExecution IAM policy
+- `templates/ecs.yaml` — exported 3 IAM role ARNs (TaskExecutionRole, DemucsTaskRole, WhisperTaskRole)
+- `layers/common/requirements.txt` — added `aws-lambda-powertools>=2.0`
+- `functions/process_upload/handler.py` — switched to powertools Logger (existing SFN stub was already correct)
 
 **Flow**:
 ```
-ValidateInput → RunDemucs (15min) → RunWhisper (10min) → Completion → Cleanup → Notify → Done
-On error: MarkFailed → NotifyFailure → Failed
+ValidateInput → RunDemucs (30min timeout) → RunWhisper (15min timeout) → MarkCompleted → SendNotification → CleanupUpload → Done
+On error: MarkFailed (DDB + S3 cleanup + notify) → Failed
 ```
+
+**Design decisions**:
+- **ECS RunTask .sync**: Step Functions waits natively for Fargate task completion (no callback tokens)
+- **Status-only notifications**: Send `{type: COMPLETED, songId}` — frontend fetches details via GET /songs/{songId}
+- **Failure cleanup**: Removes partial S3 outputs on failure (user can also clean via DELETE /songs/{songId})
+- **aws-lambda-powertools**: Added to CommonLayer for structured JSON logging with correlation IDs
+- **Separate ASL file**: `statemachines/processing.asl.json` with DefinitionUri + DefinitionSubstitutions
 
 **Auto-retry** (ASL Retry blocks on RunDemucs and RunWhisper):
 - `ErrorEquals: ["States.TaskFailed"]` — catches Fargate task failures (spot interruptions, transient S3 errors)
@@ -393,22 +442,32 @@ On error: MarkFailed → NotifyFailure → Failed
 - `ErrorEquals: ["ECS.AmazonECSException"]` — catches capacity/quota errors
 - `IntervalSeconds: 60`, `BackoffRate: 2`, `MaxAttempts: 5`
 
-**Progress**: Fargate containers async-invoke `SendProgress` Lambda via boto3.
+**Tests**: 15 new tests (test_completion, test_cleanup, test_notify, test_failure_handler, test_processing_asl, test_process_upload SFN test) — **123 total**
+
+**Notes**:
+- EventBridge rule `StepFunctionsGetEventsForECSTaskRule` is auto-created by Step Functions for `.sync` integration — IAM policy must allow events:PutTargets/PutRule/DescribeRule
+- `FakeLambdaContext` fixture added to conftest.py for aws-lambda-powertools `@inject_lambda_context` compatibility in tests
+- Container names in ASL overrides (`"demucs"`, `"whisper"`) must match Name fields in ecs.yaml task definitions
 
 ---
 
-## Phase 7: Song Library API
+## Phase 7.5: E2E Testing & Fixes (In Progress)
 
-**Goal**: CRUD endpoints for the user's song library.
+**Goal**: Manual end-to-end testing of the deployed stack, fixing issues discovered along the way.
 
-**Files**:
-- `functions/list_songs/handler.py` — `GET /songs` (optional `?status=` filter)
-- `functions/get_song/handler.py` — `GET /songs/{songId}` (details + presigned/CloudFront URLs for stems + lyrics)
-- `functions/delete_song/handler.py` — `DELETE /songs/{songId}` (remove DDB record + S3 stems + lyrics)
-- `functions/get_presets/handler.py` — `GET /presets` (static mixing presets)
-- Add routes to `templates/api.yaml`
+**Fixes applied**:
+- **ASL LaunchType conflict**: Removed `"LaunchType": "FARGATE"` from RunDemucs and RunWhisper states in `statemachines/processing.asl.json` — ECS rejects requests that specify both `LaunchType` and `CapacityProviderStrategy` simultaneously. FARGATE_SPOT via CapacityProviderStrategy is sufficient.
 
-**Existing utilities to reuse**: `dynamodb_utils.py` (song CRUD), `s3_utils.py` (presigned URLs, delete), `response.py` (API responses), `error_handling.py` (`@handle_errors` decorator).
+**Issues found**:
+- **Stale errorMessage on success**: `completion/handler.py` sets `status: COMPLETED` but doesn't clear `errorMessage` from a prior failed run. GET /songs/{songId} returns the stale error. Fix: add `remove_attrs` support to `update_song()` and pass `remove_attrs=["errorMessage"]` in completion handler.
+- **No backpressure on SFN starts**: `process_upload` calls `sfn.start_execution()` directly — burst uploads could exhaust Fargate vCPU quota or hit SFN throttling.
+
+**Planned**:
+- **SQS backpressure queue**: `process_upload → SQS → start_execution Lambda → Step Functions`. New processing queue in `monitoring.yaml` (SSE, 1-day retention, redrive to existing DLQ). New `start_execution` consumer Lambda with `ReservedConcurrentExecutions: 5` (tunable parallelism knob). `process_upload` switches from `sfn.start_execution()` to `sqs.send_message()`.
+- **Fix stale errorMessage**: Add `remove_attrs` parameter to `dynamodb_utils.update_song()`. Completion handler passes `remove_attrs=["errorMessage"]` to clear leftover error fields on success.
+- **Retry endpoint** (`POST /songs/{songId}/retry`) — reprocess a FAILED song without re-uploading
+- **Powertools logging migration**: Migrate remaining Lambdas from `logging.getLogger()` to `aws_lambda_powertools.Logger` with `@inject_lambda_context`. Currently only `process_upload`, `completion`, `cleanup`, `notify`, `failure_handler` use powertools. Remaining: `upload_request`, `get_song`, `list_songs`, `delete_song`, `get_presets`, `ws_connect`, `ws_disconnect`, `ws_default`, `send_progress`. Adds structured JSON logging, correlation IDs, and cold start tracking across all handlers.
+- Additional issues TBD from continued manual testing
 
 ---
 

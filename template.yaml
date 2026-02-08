@@ -165,12 +165,17 @@ Resources:
         - !Ref CommonLayer
       Environment:
         Variables:
-          STATE_MACHINE_ARN: ""
+          STATE_MACHINE_ARN: !GetAtt OrchestrationStack.Outputs.StateMachineArn
       Policies:
         - S3ReadPolicy:
             BucketName: !Sub "${AppName}-${Environment}-uploads-${AWS::AccountId}"
         - DynamoDBCrudPolicy:
             TableName: !GetAtt StorageStack.Outputs.SongsTableName
+        - Statement:
+            - Effect: Allow
+              Action:
+                - states:StartExecution
+              Resource: !GetAtt OrchestrationStack.Outputs.StateMachineArn
 
   # ---- Phase 2: REST API ----
 
@@ -184,6 +189,10 @@ Resources:
         CognitoUserPoolArn: !GetAtt AuthStack.Outputs.UserPoolArn
         UploadRequestFunctionArn: !GetAtt UploadRequestFunction.Arn
         CorsOrigin: !Ref CorsOrigin
+        ListSongsFunctionArn: !GetAtt ListSongsFunction.Arn
+        GetSongFunctionArn: !GetAtt GetSongFunction.Arn
+        DeleteSongFunctionArn: !GetAtt DeleteSongFunction.Arn
+        GetPresetsFunctionArn: !GetAtt GetPresetsFunction.Arn
 
   # ---- Phase 3: WebSocket Lambda Functions ----
 
@@ -274,8 +283,142 @@ Resources:
         OutputBucketName: !GetAtt StorageStack.Outputs.OutputBucketName
         SendProgressFunctionArn: !GetAtt SendProgressFunction.Arn
 
-  # Phase 6: Step Functions state machine, Lambda functions
-  # Phase 7: Song library API routes
+  # ---- Phase 7: Song Library API Functions ----
+
+  ListSongsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-list-songs"
+      Handler: list_songs/handler.lambda_handler
+      CodeUri: functions/
+      Layers:
+        - !Ref CommonLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !GetAtt StorageStack.Outputs.SongsTableName
+
+  GetSongFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-get-song"
+      Handler: get_song/handler.lambda_handler
+      CodeUri: functions/
+      Layers:
+        - !Ref CommonLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !GetAtt StorageStack.Outputs.SongsTableName
+        - S3ReadPolicy:
+            BucketName: !GetAtt StorageStack.Outputs.OutputBucketName
+
+  DeleteSongFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-delete-song"
+      Handler: delete_song/handler.lambda_handler
+      CodeUri: functions/
+      Layers:
+        - !Ref CommonLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !GetAtt StorageStack.Outputs.SongsTableName
+        - S3CrudPolicy:
+            BucketName: !GetAtt StorageStack.Outputs.OutputBucketName
+        - S3CrudPolicy:
+            BucketName: !Sub "${AppName}-${Environment}-uploads-${AWS::AccountId}"
+
+  GetPresetsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-get-presets"
+      Handler: get_presets/handler.lambda_handler
+      CodeUri: functions/
+      Layers:
+        - !Ref CommonLayer
+
+  # ---- Phase 6: Step Functions Lambda Functions ----
+
+  CompletionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-completion"
+      Handler: completion/handler.lambda_handler
+      CodeUri: functions/
+      Layers:
+        - !Ref CommonLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !GetAtt StorageStack.Outputs.SongsTableName
+
+  CleanupFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-cleanup"
+      Handler: cleanup/handler.lambda_handler
+      CodeUri: functions/
+      Layers:
+        - !Ref CommonLayer
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Sub "${AppName}-${Environment}-uploads-${AWS::AccountId}"
+
+  NotifyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-notify"
+      Handler: notify/handler.lambda_handler
+      CodeUri: functions/
+      Layers:
+        - !Ref CommonLayer
+      Environment:
+        Variables:
+          SEND_PROGRESS_FUNCTION_ARN: !GetAtt SendProgressFunction.Arn
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref SendProgressFunction
+
+  FailureHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-failure-handler"
+      Handler: failure_handler/handler.lambda_handler
+      CodeUri: functions/
+      Layers:
+        - !Ref CommonLayer
+      Environment:
+        Variables:
+          SEND_PROGRESS_FUNCTION_ARN: !GetAtt SendProgressFunction.Arn
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !GetAtt StorageStack.Outputs.SongsTableName
+        - S3CrudPolicy:
+            BucketName: !GetAtt StorageStack.Outputs.OutputBucketName
+        - LambdaInvokePolicy:
+            FunctionName: !Ref SendProgressFunction
+
+  # ---- Phase 6: Step Functions Orchestration ----
+
+  OrchestrationStack:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: ./templates/orchestration.yaml
+      Parameters:
+        Environment: !Ref Environment
+        AppName: !Ref AppName
+        EcsClusterArn: !GetAtt EcsStack.Outputs.EcsClusterArn
+        DemucsTaskDefinitionArn: !GetAtt EcsStack.Outputs.DemucsTaskDefinitionArn
+        WhisperTaskDefinitionArn: !GetAtt EcsStack.Outputs.WhisperTaskDefinitionArn
+        PublicSubnet1: !GetAtt VpcStack.Outputs.PublicSubnet1
+        PublicSubnet2: !GetAtt VpcStack.Outputs.PublicSubnet2
+        FargateSecurityGroupId: !GetAtt VpcStack.Outputs.FargateSecurityGroupId
+        CompletionFunctionArn: !GetAtt CompletionFunction.Arn
+        NotifyFunctionArn: !GetAtt NotifyFunction.Arn
+        CleanupFunctionArn: !GetAtt CleanupFunction.Arn
+        FailureHandlerFunctionArn: !GetAtt FailureHandlerFunction.Arn
+        TaskExecutionRoleArn: !GetAtt EcsStack.Outputs.TaskExecutionRoleArn
+        DemucsTaskRoleArn: !GetAtt EcsStack.Outputs.DemucsTaskRoleArn
+        WhisperTaskRoleArn: !GetAtt EcsStack.Outputs.WhisperTaskRoleArn
+
   # Phase 9: CloudWatch dashboard, alarms
 
 Outputs:
@@ -346,3 +489,7 @@ Outputs:
     Value: !GetAtt EcsStack.Outputs.WhisperRepositoryUri
   WhisperTaskDefinitionArn:
     Value: !GetAtt EcsStack.Outputs.WhisperTaskDefinitionArn
+
+  # Step Functions
+  StateMachineArn:
+    Value: !GetAtt OrchestrationStack.Outputs.StateMachineArn

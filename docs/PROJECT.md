@@ -118,20 +118,19 @@ Users can toggle individual stems on/off for different use cases — karaoke (vo
 5. Lambda starts Step Functions execution
 6. WebSocket sends `PROCESSING_STARTED` to client
 
-### Step Functions Workflow
+### Step Functions Workflow (Implemented — Phase 6)
 ```
-ValidateInput (Pass)
-  → RunDemucs (ecs:runTask.sync, 15min timeout)
-  → RunWhisper (ecs:runTask.sync, 10min timeout)
-  → UpdateSongCompleted (Lambda)
-  → DeleteOriginalUpload (Lambda)
-  → NotifyCompletion (Lambda → WebSocket)
-  → ProcessingComplete (Succeed)
+ValidateInput (Pass — computes outputPrefix + vocalsKey)
+  → RunDemucs (ecs:runTask.sync, 30min timeout, FARGATE_SPOT)
+  → RunWhisper (ecs:runTask.sync, 15min timeout, FARGATE_SPOT)
+  → MarkCompleted (Lambda — DDB status=COMPLETED)
+  → SendNotification (Lambda — WebSocket {type: COMPLETED, songId})
+  → CleanupUpload (Lambda — delete original upload from S3)
+  → Done (Succeed)
 
 On error at any stage:
-  → MarkSongFailed (Lambda)
-  → NotifyFailure (Lambda → WebSocket)
-  → ProcessingFailed (Fail)
+  → MarkFailed (Lambda — DDB status=FAILED, clean partial S3 outputs, send FAILED notification)
+  → Failed (Fail)
 ```
 
 ### Demucs Container

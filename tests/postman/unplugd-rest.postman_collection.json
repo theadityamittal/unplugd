@@ -1,0 +1,1006 @@
+{
+  "info": {
+    "name": "Unplugd REST API",
+    "description": "Serverless AWS karaoke platform API — upload songs, get separated stems and synced lyrics.\n\nIncludes REST endpoints, AWS service verification (DynamoDB, S3, Step Functions), and a setup request to auto-populate environment variables from CloudFormation stack outputs.\n\nRequires the `unplugd-dev` environment.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{idToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Skip auth for requests that don't need it (e.g., presigned URL uploads, AWS Sig v4)",
+          "if (pm.request.headers.has('Skip-Auth')) {",
+          "    return;",
+          "}",
+          "",
+          "const clientId = pm.environment.get('clientId');",
+          "const email = pm.environment.get('testEmail');",
+          "const password = pm.environment.get('testPassword');",
+          "const region = pm.environment.get('region');",
+          "",
+          "const authUrl = `https://cognito-idp.${region}.amazonaws.com/`;",
+          "",
+          "const requestBody = {",
+          "    AuthFlow: 'USER_PASSWORD_AUTH',",
+          "    ClientId: clientId,",
+          "    AuthParameters: {",
+          "        USERNAME: email,",
+          "        PASSWORD: password",
+          "    }",
+          "};",
+          "",
+          "// async/await ensures the token is set BEFORE the main request fires.",
+          "// The old callback pattern (pm.sendRequest({...}, function(err, res) {...}))",
+          "// is non-blocking — Postman sends the main request before the callback",
+          "// completes, so idToken and userSub never get set in time.",
+          "const res = await pm.sendRequest({",
+          "    url: authUrl,",
+          "    method: 'POST',",
+          "    header: {",
+          "        'Content-Type': 'application/x-amz-json-1.1',",
+          "        'X-Amz-Target': 'AWSCognitoIdentityProviderService.InitiateAuth'",
+          "    },",
+          "    body: {",
+          "        mode: 'raw',",
+          "        raw: JSON.stringify(requestBody)",
+          "    }",
+          "});",
+          "",
+          "const json = res.json();",
+          "if (json.AuthenticationResult) {",
+          "    const idToken = json.AuthenticationResult.IdToken;",
+          "    pm.environment.set('idToken', idToken);",
+          "",
+          "    // Decode JWT to extract user sub",
+          "    const payload = JSON.parse(atob(idToken.split('.')[1]));",
+          "    pm.environment.set('userSub', payload.sub);",
+          "",
+          "    console.log('Token refreshed. User sub:', payload.sub);",
+          "} else {",
+          "    console.error('Auth response:', JSON.stringify(json));",
+          "    throw new Error('Cognito auth failed — check clientId, testEmail, testPassword in environment');",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Setup",
+      "description": "One-time setup requests. Run 'Fetch Stack Outputs' first to auto-populate environment variables from CloudFormation.",
+      "item": [
+        {
+          "name": "Fetch Stack Outputs",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('CloudFormation DescribeStacks succeeds', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "// Map CloudFormation OutputKeys to Postman environment variable names",
+                  "const outputMap = {",
+                  "    'ApiEndpoint': 'apiEndpoint',",
+                  "    'WebSocketApiEndpoint': 'wsEndpoint',",
+                  "    'CognitoUserPoolId': 'userPoolId',",
+                  "    'CognitoUserPoolClientId': 'clientId',",
+                  "    'UploadBucketName': 'uploadBucketName',",
+                  "    'OutputBucketName': 'outputBucketName',",
+                  "    'SongsTableName': 'songsTableName',",
+                  "    'ConnectionsTableName': 'connectionsTableName',",
+                  "    'EcsClusterArn': 'ecsClusterArn',",
+                  "    'DemucsTaskDefinitionArn': 'demucsTaskDef',",
+                  "    'WhisperTaskDefinitionArn': 'whisperTaskDef',",
+                  "    'StateMachineArn': 'stateMachineArn',",
+                  "    'PublicSubnetIds': 'publicSubnetIds',",
+                  "    'FargateSecurityGroupId': 'securityGroupId',",
+                  "    'VpcId': 'vpcId'",
+                  "};",
+                  "",
+                  "// Parse CloudFormation XML response",
+                  "const xml = pm.response.text();",
+                  "const keyRegex = /<OutputKey>(.*?)<\\/OutputKey>\\s*<OutputValue>(.*?)<\\/OutputValue>/g;",
+                  "let match;",
+                  "let found = 0;",
+                  "while ((match = keyRegex.exec(xml)) !== null) {",
+                  "    const cfnKey = match[1];",
+                  "    const cfnValue = match[2];",
+                  "    if (outputMap[cfnKey]) {",
+                  "        pm.environment.set(outputMap[cfnKey], cfnValue);",
+                  "        found++;",
+                  "        console.log(`Set ${outputMap[cfnKey]} = ${cfnValue}`);",
+                  "    }",
+                  "}",
+                  "",
+                  "pm.test('Extracted stack outputs', function () {",
+                  "    pm.expect(found).to.be.greaterThan(10);",
+                  "    console.log(`Populated ${found} environment variables from stack outputs`);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "awsv4",
+              "awsv4": [
+                { "key": "accessKey", "value": "{{awsAccessKey}}", "type": "string" },
+                { "key": "secretKey", "value": "{{awsSecretKey}}", "type": "string" },
+                { "key": "region", "value": "{{region}}", "type": "string" },
+                { "key": "service", "value": "cloudformation", "type": "string" },
+                { "key": "sessionToken", "value": "{{awsSessionToken}}", "type": "string" }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" },
+              { "key": "Skip-Auth", "value": "true" }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "Action", "value": "DescribeStacks" },
+                { "key": "StackName", "value": "{{stackName}}" },
+                { "key": "Version", "value": "2010-05-15" }
+              ]
+            },
+            "url": {
+              "raw": "https://cloudformation.{{region}}.amazonaws.com/",
+              "protocol": "https",
+              "host": ["cloudformation", "{{region}}", "amazonaws", "com"],
+              "path": [""]
+            },
+            "description": "Calls CloudFormation DescribeStacks to auto-populate 15 environment variables (API endpoints, bucket names, table names, ECS/VPC resources, etc.) from stack outputs."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "description": "Authentication requests. The collection pre-request script handles auth automatically — this folder is for debugging.",
+      "item": [
+        {
+          "name": "Get Token (debug)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Auth succeeds', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "if (json.AuthenticationResult) {",
+                  "    const idToken = json.AuthenticationResult.IdToken;",
+                  "    pm.environment.set('idToken', idToken);",
+                  "",
+                  "    const payload = JSON.parse(atob(idToken.split('.')[1]));",
+                  "    pm.environment.set('userSub', payload.sub);",
+                  "",
+                  "    pm.test('Token and userSub saved', function () {",
+                  "        pm.expect(payload.sub).to.be.a('string');",
+                  "        console.log('User sub:', payload.sub);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-amz-json-1.1" },
+              { "key": "X-Amz-Target", "value": "AWSCognitoIdentityProviderService.InitiateAuth" },
+              { "key": "Skip-Auth", "value": "true" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"AuthFlow\": \"USER_PASSWORD_AUTH\",\n    \"ClientId\": \"{{clientId}}\",\n    \"AuthParameters\": {\n        \"USERNAME\": \"{{testEmail}}\",\n        \"PASSWORD\": \"{{testPassword}}\"\n    }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "https://cognito-idp.{{region}}.amazonaws.com/",
+              "protocol": "https",
+              "host": ["cognito-idp", "{{region}}", "amazonaws", "com"],
+              "path": [""]
+            },
+            "description": "Manually request a Cognito token for debugging. The collection pre-request script does this automatically for all authenticated requests."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Upload Flow",
+      "description": "Upload API endpoints — request presigned URL, upload file, and error cases.",
+      "item": [
+        {
+          "name": "POST Upload URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('Response has songId and uploadUrl', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('songId');",
+                  "    pm.expect(json).to.have.property('uploadUrl');",
+                  "    pm.expect(json).to.have.property('expiresIn', 900);",
+                  "",
+                  "    // Save for subsequent requests",
+                  "    pm.environment.set('songId', json.songId);",
+                  "    pm.environment.set('uploadUrl', json.uploadUrl);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"filename\": \"my-song.mp3\",\n    \"contentType\": \"audio/mpeg\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{apiEndpoint}}/songs/upload-url",
+              "host": ["{{apiEndpoint}}"],
+              "path": ["songs", "upload-url"]
+            },
+            "description": "Request a presigned S3 upload URL. Saves songId and uploadUrl to environment."
+          },
+          "response": []
+        },
+        {
+          "name": "POST Upload URL — Missing Filename (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test('Error mentions filename', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.error).to.include('filename');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"contentType\": \"audio/mpeg\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{apiEndpoint}}/songs/upload-url",
+              "host": ["{{apiEndpoint}}"],
+              "path": ["songs", "upload-url"]
+            },
+            "description": "Error case: missing filename field."
+          },
+          "response": []
+        },
+        {
+          "name": "POST Upload URL — Invalid Content Type (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test('Error mentions contentType', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.error).to.include('contentType');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"filename\": \"song.txt\",\n    \"contentType\": \"text/plain\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{apiEndpoint}}/songs/upload-url",
+              "host": ["{{apiEndpoint}}"],
+              "path": ["songs", "upload-url"]
+            },
+            "description": "Error case: unsupported content type."
+          },
+          "response": []
+        },
+        {
+          "name": "POST Upload URL — No Auth (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Skip-Auth", "value": "true" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"filename\": \"my-song.mp3\",\n    \"contentType\": \"audio/mpeg\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{apiEndpoint}}/songs/upload-url",
+              "host": ["{{apiEndpoint}}"],
+              "path": ["songs", "upload-url"]
+            },
+            "description": "Error case: no authorization header."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT Upload File (presigned URL)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "audio/mpeg" },
+              { "key": "Skip-Auth", "value": "true" }
+            ],
+            "body": {
+              "mode": "file",
+              "file": { "src": "" }
+            },
+            "url": {
+              "raw": "{{uploadUrl}}",
+              "host": ["{{uploadUrl}}"]
+            },
+            "description": "Upload audio file to the presigned S3 URL. Select a binary file (MP3, WAV, M4A, FLAC — max 50MB, 10 min). The presigned URL has auth baked into query string parameters."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Song Library",
+      "description": "Song library CRUD endpoints.",
+      "item": [
+        {
+          "name": "GET List Songs",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response has data array', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('data');",
+                  "    pm.expect(json.data).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiEndpoint}}/songs",
+              "host": ["{{apiEndpoint}}"],
+              "path": ["songs"]
+            },
+            "description": "List all songs in the user's library."
+          },
+          "response": []
+        },
+        {
+          "name": "GET List Songs (filtered by status)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('All songs have COMPLETED status', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.data).to.be.an('array');",
+                  "    json.data.forEach(song => {",
+                  "        pm.expect(song.status).to.equal('COMPLETED');",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiEndpoint}}/songs?status=COMPLETED",
+              "host": ["{{apiEndpoint}}"],
+              "path": ["songs"],
+              "query": [
+                { "key": "status", "value": "COMPLETED" }
+              ]
+            },
+            "description": "List songs filtered by status. Valid values: PENDING_UPLOAD, PROCESSING, COMPLETED, FAILED."
+          },
+          "response": []
+        },
+        {
+          "name": "GET Song Detail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('COMPLETED song has stem URLs', function () {",
+                  "    const json = pm.response.json();",
+                  "    if (json.status === 'COMPLETED') {",
+                  "        pm.expect(json).to.have.property('stemUrls');",
+                  "        pm.expect(json).to.have.property('lyricsUrl');",
+                  "        pm.expect(json.stemUrls).to.have.all.keys('drums', 'bass', 'other', 'vocals');",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiEndpoint}}/songs/{{songId}}",
+              "host": ["{{apiEndpoint}}"],
+              "path": ["songs", "{{songId}}"]
+            },
+            "description": "Get song details. COMPLETED songs include stemUrls and lyricsUrl."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE Song",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response confirms deletion', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.deleted).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{apiEndpoint}}/songs/{{songId}}",
+              "host": ["{{apiEndpoint}}"],
+              "path": ["songs", "{{songId}}"]
+            },
+            "description": "Delete a song and its associated stems/lyrics from S3. Verify with GET /songs/{{songId}} afterwards — should return 404."
+          },
+          "response": []
+        },
+        {
+          "name": "GET Presets",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Has 5 presets with volumes', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.data).to.have.length(5);",
+                  "    json.data.forEach(preset => {",
+                  "        pm.expect(preset).to.have.all.keys('id', 'name', 'description', 'volumes');",
+                  "        pm.expect(preset.volumes).to.have.all.keys('drums', 'bass', 'other', 'vocals');",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiEndpoint}}/presets",
+              "host": ["{{apiEndpoint}}"],
+              "path": ["presets"]
+            },
+            "description": "Get available mixing presets: Balanced, Karaoke, Drum Practice, Bass Practice, Vocals Only."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "AWS Verification",
+      "description": "Direct AWS API calls for verifying processing results. Requires awsAccessKey, awsSecretKey, and awsSessionToken in the environment.",
+      "item": [
+        {
+          "name": "DynamoDB — Get Song Item",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Song item exists', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('Item');",
+                  "    console.log('Song status:', json.Item.status.S);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "awsv4",
+              "awsv4": [
+                { "key": "accessKey", "value": "{{awsAccessKey}}", "type": "string" },
+                { "key": "secretKey", "value": "{{awsSecretKey}}", "type": "string" },
+                { "key": "region", "value": "{{region}}", "type": "string" },
+                { "key": "service", "value": "dynamodb", "type": "string" },
+                { "key": "sessionToken", "value": "{{awsSessionToken}}", "type": "string" }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-amz-json-1.0" },
+              { "key": "X-Amz-Target", "value": "DynamoDB_20120810.GetItem" },
+              { "key": "Skip-Auth", "value": "true" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"TableName\": \"{{songsTableName}}\",\n    \"Key\": {\n        \"userId\": {\"S\": \"{{userSub}}\"},\n        \"songId\": {\"S\": \"{{songId}}\"}\n    }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "https://dynamodb.{{region}}.amazonaws.com/",
+              "protocol": "https",
+              "host": ["dynamodb", "{{region}}", "amazonaws", "com"],
+              "path": [""]
+            },
+            "description": "Get a specific song item from DynamoDB. Uses {{userSub}} and {{songId}} from environment."
+          },
+          "response": []
+        },
+        {
+          "name": "DynamoDB — Query User Songs",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Query returns items', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('Items');",
+                  "    console.log('Song count:', json.Count);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "awsv4",
+              "awsv4": [
+                { "key": "accessKey", "value": "{{awsAccessKey}}", "type": "string" },
+                { "key": "secretKey", "value": "{{awsSecretKey}}", "type": "string" },
+                { "key": "region", "value": "{{region}}", "type": "string" },
+                { "key": "service", "value": "dynamodb", "type": "string" },
+                { "key": "sessionToken", "value": "{{awsSessionToken}}", "type": "string" }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-amz-json-1.0" },
+              { "key": "X-Amz-Target", "value": "DynamoDB_20120810.Query" },
+              { "key": "Skip-Auth", "value": "true" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"TableName\": \"{{songsTableName}}\",\n    \"KeyConditionExpression\": \"userId = :uid\",\n    \"ExpressionAttributeValues\": {\n        \":uid\": {\"S\": \"{{userSub}}\"}\n    }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "https://dynamodb.{{region}}.amazonaws.com/",
+              "protocol": "https",
+              "host": ["dynamodb", "{{region}}", "amazonaws", "com"],
+              "path": [""]
+            },
+            "description": "Query all songs for the current user in DynamoDB."
+          },
+          "response": []
+        },
+        {
+          "name": "S3 — List Output Stems",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Contains stem files', function () {",
+                  "    const xml = pm.response.text();",
+                  "    pm.expect(xml).to.include('drums.wav');",
+                  "    pm.expect(xml).to.include('bass.wav');",
+                  "    pm.expect(xml).to.include('other.wav');",
+                  "    pm.expect(xml).to.include('vocals.wav');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "awsv4",
+              "awsv4": [
+                { "key": "accessKey", "value": "{{awsAccessKey}}", "type": "string" },
+                { "key": "secretKey", "value": "{{awsSecretKey}}", "type": "string" },
+                { "key": "region", "value": "{{region}}", "type": "string" },
+                { "key": "service", "value": "s3", "type": "string" },
+                { "key": "sessionToken", "value": "{{awsSessionToken}}", "type": "string" }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              { "key": "Skip-Auth", "value": "true" }
+            ],
+            "url": {
+              "raw": "https://{{outputBucketName}}.s3.{{region}}.amazonaws.com/?list-type=2&prefix=output/{{userSub}}/{{songId}}/",
+              "protocol": "https",
+              "host": ["{{outputBucketName}}", "s3", "{{region}}", "amazonaws", "com"],
+              "path": [""],
+              "query": [
+                { "key": "list-type", "value": "2" },
+                { "key": "prefix", "value": "output/{{userSub}}/{{songId}}/" }
+              ]
+            },
+            "description": "List output stem files in S3. After Demucs: drums.wav, bass.wav, other.wav, vocals.wav. After Whisper: also lyrics.json."
+          },
+          "response": []
+        },
+        {
+          "name": "S3 — Get Lyrics JSON",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Valid lyrics JSON', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('segments');",
+                  "    if (json.instrumental) {",
+                  "        pm.expect(json.segments).to.have.length(0);",
+                  "    } else {",
+                  "        pm.expect(json.segments.length).to.be.greaterThan(0);",
+                  "        pm.expect(json).to.have.property('language');",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "awsv4",
+              "awsv4": [
+                { "key": "accessKey", "value": "{{awsAccessKey}}", "type": "string" },
+                { "key": "secretKey", "value": "{{awsSecretKey}}", "type": "string" },
+                { "key": "region", "value": "{{region}}", "type": "string" },
+                { "key": "service", "value": "s3", "type": "string" },
+                { "key": "sessionToken", "value": "{{awsSessionToken}}", "type": "string" }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              { "key": "Skip-Auth", "value": "true" }
+            ],
+            "url": {
+              "raw": "https://{{outputBucketName}}.s3.{{region}}.amazonaws.com/output/{{userSub}}/{{songId}}/lyrics.json",
+              "protocol": "https",
+              "host": ["{{outputBucketName}}", "s3", "{{region}}", "amazonaws", "com"],
+              "path": ["output", "{{userSub}}", "{{songId}}", "lyrics.json"]
+            },
+            "description": "Download lyrics JSON from S3. Contains language, instrumental flag, and segments with word-level timestamps."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Step Functions",
+      "description": "Monitor Step Functions executions. Requires awsAccessKey/awsSecretKey in the environment.",
+      "item": [
+        {
+          "name": "List Executions",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Has executions', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('executions');",
+                  "    if (json.executions.length > 0) {",
+                  "        pm.environment.set('executionArn', json.executions[0].executionArn);",
+                  "        console.log('Latest execution:', json.executions[0].status);",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "awsv4",
+              "awsv4": [
+                { "key": "accessKey", "value": "{{awsAccessKey}}", "type": "string" },
+                { "key": "secretKey", "value": "{{awsSecretKey}}", "type": "string" },
+                { "key": "region", "value": "{{region}}", "type": "string" },
+                { "key": "service", "value": "states", "type": "string" },
+                { "key": "sessionToken", "value": "{{awsSessionToken}}", "type": "string" }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-amz-json-1.0" },
+              { "key": "X-Amz-Target", "value": "AWSStepFunctions.ListExecutions" },
+              { "key": "Skip-Auth", "value": "true" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"stateMachineArn\": \"{{stateMachineArn}}\",\n    \"maxResults\": 5\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "https://states.{{region}}.amazonaws.com/",
+              "protocol": "https",
+              "host": ["states", "{{region}}", "amazonaws", "com"],
+              "path": [""]
+            },
+            "description": "List recent Step Functions executions. Saves the latest execution ARN to {{executionArn}}."
+          },
+          "response": []
+        },
+        {
+          "name": "Describe Execution",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Execution details returned', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status');",
+                  "    console.log('Execution status:', json.status);",
+                  "    if (json.input) {",
+                  "        console.log('Input:', json.input);",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "awsv4",
+              "awsv4": [
+                { "key": "accessKey", "value": "{{awsAccessKey}}", "type": "string" },
+                { "key": "secretKey", "value": "{{awsSecretKey}}", "type": "string" },
+                { "key": "region", "value": "{{region}}", "type": "string" },
+                { "key": "service", "value": "states", "type": "string" },
+                { "key": "sessionToken", "value": "{{awsSessionToken}}", "type": "string" }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-amz-json-1.0" },
+              { "key": "X-Amz-Target", "value": "AWSStepFunctions.DescribeExecution" },
+              { "key": "Skip-Auth", "value": "true" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"executionArn\": \"{{executionArn}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "https://states.{{region}}.amazonaws.com/",
+              "protocol": "https",
+              "host": ["states", "{{region}}", "amazonaws", "com"],
+              "path": [""]
+            },
+            "description": "Get details of a specific Step Functions execution. Run 'List Executions' first to populate {{executionArn}}."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Execution History",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('History events returned', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('events');",
+                  "    pm.expect(json.events).to.be.an('array');",
+                  "    console.log('Total events:', json.events.length);",
+                  "",
+                  "    // Log any failures",
+                  "    const failures = json.events.filter(e => e.type.includes('Failed'));",
+                  "    if (failures.length > 0) {",
+                  "        console.log('Failures:', JSON.stringify(failures, null, 2));",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "awsv4",
+              "awsv4": [
+                { "key": "accessKey", "value": "{{awsAccessKey}}", "type": "string" },
+                { "key": "secretKey", "value": "{{awsSecretKey}}", "type": "string" },
+                { "key": "region", "value": "{{region}}", "type": "string" },
+                { "key": "service", "value": "states", "type": "string" },
+                { "key": "sessionToken", "value": "{{awsSessionToken}}", "type": "string" }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-amz-json-1.0" },
+              { "key": "X-Amz-Target", "value": "AWSStepFunctions.GetExecutionHistory" },
+              { "key": "Skip-Auth", "value": "true" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"executionArn\": \"{{executionArn}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "https://states.{{region}}.amazonaws.com/",
+              "protocol": "https",
+              "host": ["states", "{{region}}", "amazonaws", "com"],
+              "path": [""]
+            },
+            "description": "Get full execution history for debugging. Highlights any failed states in the console log."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import io
+import json
 import struct
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import boto3
 import pytest
@@ -199,6 +200,47 @@ def test_transient_error_reraises(
     # Song should NOT be marked FAILED — still PENDING_UPLOAD
     result = dynamodb_tables["songs_table"].get_item(Key={"userId": user_id, "songId": song_id})
     assert result["Item"]["status"] == "PENDING_UPLOAD"
+
+
+def test_step_functions_invocation(
+    dynamodb_tables: dict[str, Any], s3_buckets: dict[str, Any]
+) -> None:
+    """When STATE_MACHINE_ARN is set, handler starts a Step Functions execution."""
+    user_id = "user-123"
+    song_id = "song-abc"
+    key = f"uploads/{user_id}/{song_id}/test.wav"
+    bucket = s3_buckets["upload"]
+
+    wav_data = _create_wav_bytes(duration_sec=5.0)
+    s3 = boto3.client("s3", region_name="us-east-1")
+    s3.put_object(Bucket=bucket, Key=key, Body=wav_data)
+
+    _setup_song(dynamodb_tables, user_id, song_id)
+
+    event = _make_s3_event(bucket, key, size=len(wav_data))
+
+    sfn_arn = "arn:aws:states:us-east-1:123456789012:stateMachine:test-processing"
+    mock_sfn = MagicMock()
+
+    with (
+        patch.dict("os.environ", {"STATE_MACHINE_ARN": sfn_arn}),
+        patch("functions.process_upload.handler.boto3") as mock_boto3,
+    ):
+        # boto3.client("stepfunctions") returns our mock; _s3 is already bound at import time
+        mock_boto3.client.return_value = mock_sfn
+
+        from functions.process_upload.handler import lambda_handler
+
+        lambda_handler(event, None)
+
+        mock_sfn.start_execution.assert_called_once()
+        call_kwargs = mock_sfn.start_execution.call_args[1]
+        assert call_kwargs["stateMachineArn"] == sfn_arn
+
+        sfn_input = json.loads(call_kwargs["input"])
+        assert sfn_input["userId"] == user_id
+        assert sfn_input["songId"] == song_id
+        assert sfn_input["key"] == key
 
 
 def test_duration_too_long(dynamodb_tables: dict[str, Any], s3_buckets: dict[str, Any]) -> None:

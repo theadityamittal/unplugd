@@ -54,7 +54,8 @@ unplugd/
 │   ├── monitoring.yaml        # SQS DLQ + CloudWatch alarms
 │   ├── storage.yaml           # DynamoDB tables + S3 output bucket
 │   ├── vpc.yaml               # VPC, subnets, IGW, security groups
-│   └── websocket.yaml         # WebSocket API Gateway
+│   ├── websocket.yaml         # WebSocket API Gateway
+│   └── orchestration.yaml    # Step Functions state machine
 ├── functions/                 # Lambda handlers
 │   ├── shared/                # Shared utilities (Lambda layer)
 │   ├── upload_request/        # POST /songs/upload-url
@@ -77,7 +78,7 @@ unplugd/
 │   └── whisper/               # Lyrics extraction
 ├── layers/common/             # Lambda layer (symlink → functions/shared)
 ├── statemachines/             # Step Functions ASL definitions
-├── tests/                     # 92 unit tests across 16 files
+├── tests/                     # 123 unit tests across 25 files
 ├── docs/
 │   └── PROJECT.md             # Full spec (API, schemas, formats, costs)
 │   └── PROJECT_PLAN.md        # Implementation roadmap with phase details and status
@@ -114,7 +115,7 @@ sam deploy --config-env prod
 ## Development
 
 ```bash
-# Run unit tests (92 tests)
+# Run unit tests (123 tests)
 uv run pytest tests/unit/ -v
 
 # Lint
@@ -138,15 +139,15 @@ docker build --provenance=false --platform linux/amd64 \
 
 ## Current Status
 
-**Phases 0-5 complete** — 92 unit tests passing.
+**Phases 0-7 complete** — 123 unit tests passing.
 
 | Phase | Description | Status |
 |-------|-------------|--------|
 | 0-4 | Scaffold, Storage/Auth, Upload API, WebSocket, Demucs Container | **Done** |
 | 4.5 | Code audit refactoring | **Done** |
 | 5 | Whisper Container (lyrics) | **Done** |
-| 6 | Step Functions Orchestration | Pending |
-| 7 | Song Library API | Pending |
+| 6 | Step Functions Orchestration | **Done** |
+| 7 | Song Library API | **Done** |
 | 8 | Web Frontend (React/Next.js) | Pending |
 | 9-12 | CI/CD, SageMaker ML, Model Integration, Hardening | Pending |
 

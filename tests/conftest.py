@@ -37,6 +37,29 @@ os.environ["WEBSOCKET_API_ENDPOINT"] = "https://test123.execute-api.us-east-1.am
 os.environ["COGNITO_APP_CLIENT_ID"] = ""
 
 
+@dataclass
+class FakeLambdaContext:
+    """Minimal Lambda context for aws-lambda-powertools compatibility."""
+
+    function_name: str = "test-function"
+    function_version: str = "$LATEST"
+    invoked_function_arn: str = "arn:aws:lambda:us-east-1:123456789012:function:test-function"
+    memory_limit_in_mb: int = 128
+    aws_request_id: str = "test-request-id"
+    log_group_name: str = "/aws/lambda/test-function"
+    log_stream_name: str = "2025/01/01/[$LATEST]test"
+
+    @staticmethod
+    def get_remaining_time_in_millis() -> int:
+        return 300000
+
+
+@pytest.fixture()
+def lambda_context() -> FakeLambdaContext:
+    """Provide a fake Lambda context for handlers using aws-lambda-powertools."""
+    return FakeLambdaContext()
+
+
 @pytest.fixture()
 def dynamodb_tables() -> Generator[dict[str, Any], None, None]:
     """Create mocked DynamoDB tables."""

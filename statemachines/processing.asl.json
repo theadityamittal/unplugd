@@ -1,0 +1,205 @@
+{
+  "Comment": "Unplugd audio processing pipeline: Demucs stem separation → Whisper lyrics extraction",
+  "StartAt": "ValidateInput",
+  "States": {
+    "ValidateInput": {
+      "Type": "Pass",
+      "Parameters": {
+        "userId.$": "$.userId",
+        "songId.$": "$.songId",
+        "bucket.$": "$.bucket",
+        "key.$": "$.key",
+        "outputPrefix.$": "States.Format('output/{}/{}', $.userId, $.songId)",
+        "vocalsKey.$": "States.Format('output/{}/{}/vocals.wav', $.userId, $.songId)"
+      },
+      "Next": "RunDemucs"
+    },
+
+    "RunDemucs": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::ecs:runTask.sync",
+      "Parameters": {
+        "Cluster": "${EcsClusterArn}",
+        "TaskDefinition": "${DemucsTaskDefinitionArn}",
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "Subnets": ["${PublicSubnet1}", "${PublicSubnet2}"],
+            "SecurityGroups": ["${FargateSecurityGroupId}"],
+            "AssignPublicIp": "ENABLED"
+          }
+        },
+        "Overrides": {
+          "ContainerOverrides": [
+            {
+              "Name": "demucs",
+              "Environment": [
+                { "Name": "S3_INPUT_KEY", "Value.$": "$.key" },
+                { "Name": "S3_OUTPUT_PREFIX", "Value.$": "$.outputPrefix" },
+                { "Name": "USER_ID", "Value.$": "$.userId" },
+                { "Name": "SONG_ID", "Value.$": "$.songId" }
+              ]
+            }
+          ]
+        },
+        "CapacityProviderStrategy": [
+          {
+            "CapacityProvider": "FARGATE_SPOT",
+            "Weight": 1
+          }
+        ]
+      },
+      "TimeoutSeconds": 1800,
+      "ResultPath": "$.demucsResult",
+      "Retry": [
+        {
+          "ErrorEquals": ["ECS.AmazonECSException"],
+          "IntervalSeconds": 60,
+          "MaxAttempts": 5,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": ["States.TaskFailed"],
+          "IntervalSeconds": 30,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "MarkFailed",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "RunWhisper"
+    },
+
+    "RunWhisper": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::ecs:runTask.sync",
+      "Parameters": {
+        "Cluster": "${EcsClusterArn}",
+        "TaskDefinition": "${WhisperTaskDefinitionArn}",
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "Subnets": ["${PublicSubnet1}", "${PublicSubnet2}"],
+            "SecurityGroups": ["${FargateSecurityGroupId}"],
+            "AssignPublicIp": "ENABLED"
+          }
+        },
+        "Overrides": {
+          "ContainerOverrides": [
+            {
+              "Name": "whisper",
+              "Environment": [
+                { "Name": "S3_INPUT_KEY", "Value.$": "$.vocalsKey" },
+                { "Name": "S3_OUTPUT_PREFIX", "Value.$": "$.outputPrefix" },
+                { "Name": "USER_ID", "Value.$": "$.userId" },
+                { "Name": "SONG_ID", "Value.$": "$.songId" }
+              ]
+            }
+          ]
+        },
+        "CapacityProviderStrategy": [
+          {
+            "CapacityProvider": "FARGATE_SPOT",
+            "Weight": 1
+          }
+        ]
+      },
+      "TimeoutSeconds": 900,
+      "ResultPath": "$.whisperResult",
+      "Retry": [
+        {
+          "ErrorEquals": ["ECS.AmazonECSException"],
+          "IntervalSeconds": 60,
+          "MaxAttempts": 5,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": ["States.TaskFailed"],
+          "IntervalSeconds": 30,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "MarkFailed",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "MarkCompleted"
+    },
+
+    "MarkCompleted": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${CompletionFunctionArn}",
+        "Payload": {
+          "userId.$": "$.userId",
+          "songId.$": "$.songId"
+        }
+      },
+      "ResultPath": "$.completionResult",
+      "Next": "SendNotification"
+    },
+
+    "SendNotification": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${NotifyFunctionArn}",
+        "Payload": {
+          "userId.$": "$.userId",
+          "songId.$": "$.songId",
+          "status": "COMPLETED"
+        }
+      },
+      "ResultPath": "$.notifyResult",
+      "Next": "CleanupUpload"
+    },
+
+    "CleanupUpload": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${CleanupFunctionArn}",
+        "Payload": {
+          "userId.$": "$.userId",
+          "songId.$": "$.songId",
+          "key.$": "$.key"
+        }
+      },
+      "ResultPath": "$.cleanupResult",
+      "Next": "Done"
+    },
+
+    "Done": {
+      "Type": "Succeed"
+    },
+
+    "MarkFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${FailureHandlerFunctionArn}",
+        "Payload": {
+          "userId.$": "$.userId",
+          "songId.$": "$.songId",
+          "error.$": "$.error"
+        }
+      },
+      "ResultPath": "$.failureResult",
+      "Next": "Failed"
+    },
+
+    "Failed": {
+      "Type": "Fail",
+      "Error": "ProcessingFailed",
+      "Cause": "Audio processing pipeline failed"
+    }
+  }
+}

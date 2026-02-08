@@ -1,0 +1,124 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: "Unplugd — Step Functions orchestration for audio processing pipeline"
+
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues: [dev, prod]
+  AppName:
+    Type: String
+    Default: unplugd
+  EcsClusterArn:
+    Type: String
+  DemucsTaskDefinitionArn:
+    Type: String
+  WhisperTaskDefinitionArn:
+    Type: String
+  PublicSubnet1:
+    Type: String
+  PublicSubnet2:
+    Type: String
+  FargateSecurityGroupId:
+    Type: String
+  CompletionFunctionArn:
+    Type: String
+  NotifyFunctionArn:
+    Type: String
+  CleanupFunctionArn:
+    Type: String
+  FailureHandlerFunctionArn:
+    Type: String
+  TaskExecutionRoleArn:
+    Type: String
+  DemucsTaskRoleArn:
+    Type: String
+  WhisperTaskRoleArn:
+    Type: String
+
+Resources:
+  ProcessingStateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AppName}-${Environment}-sfn-processing"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: EcsRunTask
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:RunTask
+                  - ecs:StopTask
+                  - ecs:DescribeTasks
+                Resource: "*"
+                Condition:
+                  ArnEquals:
+                    "ecs:cluster": !Ref EcsClusterArn
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !Ref TaskExecutionRoleArn
+                  - !Ref DemucsTaskRoleArn
+                  - !Ref WhisperTaskRoleArn
+        - PolicyName: LambdaInvoke
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !Ref CompletionFunctionArn
+                  - !Ref NotifyFunctionArn
+                  - !Ref CleanupFunctionArn
+                  - !Ref FailureHandlerFunctionArn
+        - PolicyName: EventBridge
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - events:PutTargets
+                  - events:PutRule
+                  - events:DescribeRule
+                Resource:
+                  - !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForECSTaskRule"
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  ProcessingStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub "${AppName}-${Environment}-processing"
+      DefinitionUri: ../statemachines/processing.asl.json
+      DefinitionSubstitutions:
+        EcsClusterArn: !Ref EcsClusterArn
+        DemucsTaskDefinitionArn: !Ref DemucsTaskDefinitionArn
+        WhisperTaskDefinitionArn: !Ref WhisperTaskDefinitionArn
+        PublicSubnet1: !Ref PublicSubnet1
+        PublicSubnet2: !Ref PublicSubnet2
+        FargateSecurityGroupId: !Ref FargateSecurityGroupId
+        CompletionFunctionArn: !Ref CompletionFunctionArn
+        NotifyFunctionArn: !Ref NotifyFunctionArn
+        CleanupFunctionArn: !Ref CleanupFunctionArn
+        FailureHandlerFunctionArn: !Ref FailureHandlerFunctionArn
+      Role: !GetAtt ProcessingStateMachineRole.Arn
+      Tags:
+        Environment: !Ref Environment
+        Application: !Ref AppName
+
+Outputs:
+  StateMachineArn:
+    Value: !Ref ProcessingStateMachine
+  StateMachineName:
+    Value: !GetAtt ProcessingStateMachine.Name
